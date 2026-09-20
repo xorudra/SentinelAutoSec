@@ -1,5 +1,7 @@
 # SentinelAutoSec
 
+[![CI](https://github.com/xorudra/SentinelAutoSec/actions/workflows/ci.yml/badge.svg)](https://github.com/xorudra/SentinelAutoSec/actions/workflows/ci.yml)
+
 **Automated Security Testing for Authorized Environments**
 
 SentinelAutoSec is a local-first, modular security assessment framework for controlled labs and explicitly authorized environments. It provides a complete safe assessment workflow: authorization and scope enforcement, deterministic orchestration, durable checkpoint/resume, passive web/TLS analysis, optional Nmap discovery, optional Nuclei/ZAP baselines, structured evidence, findings/risk, audit logging, dashboard/API access, and reproducible reports.
@@ -28,6 +30,11 @@ SentinelAutoSec is a local-first, modular security assessment framework for cont
 
 See `docs/PHASES.md` for the completion matrix.
 
+## Requirements
+
+- Python **3.12+**
+- Optional: Docker (for the loopback lab), Nmap, Nuclei, OWASP ZAP (EXTENDED profile tools degrade gracefully when absent)
+
 ## Quick start
 
 ```bash
@@ -38,7 +45,11 @@ source .venv/bin/activate
 # .\\.venv\\Scripts\\Activate.ps1
 
 pip install -e ".[dev]"
+
+# Both entry points are equivalent:
+sentinelsec init
 python -m apps.cli.main init
+
 python -m apps.cli.main target add local-lab --url http://127.0.0.1:8080 --authorized
 python -m apps.cli.main target scope-add local-lab 127.0.0.1 8080
 ```
@@ -67,6 +78,19 @@ Open the dashboard at `http://127.0.0.1:8000/` and API docs at `/docs`.
 
 For protected API routes, set `SENTINELSEC_API_KEY` and send `X-API-Key`. Keep the API on loopback for development; production deployments require a real identity/access-control layer and TLS termination.
 
+## Configuration
+
+All settings are environment variables (see `.env.example`):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SENTINELSEC_DB` | `sentinelsec.db` | SQLite database path |
+| `SENTINELSEC_REPORTS` | `reports/generated` | Report output directory |
+| `SENTINELSEC_API_KEY` | unset | Enables API-key auth (`X-API-Key`) on protected routes |
+| `SENTINELSEC_HTTP_TIMEOUT` | `10` | HTTP/TLS request timeout (seconds) |
+| `SENTINELSEC_JOB_HEARTBEAT` | `15` | Background job heartbeat interval (seconds) |
+| `SENTINELSEC_JOB_STALE` | `120` | Age after which a non-heartbeating RUNNING job is considered stale and requeued |
+
 ## Assessment profiles
 
 - `SAFE`: core passive web/TLS checks plus optional Nmap discovery for explicitly scoped IP targets.
@@ -85,8 +109,10 @@ Any future AI component should analyze normalized evidence only. It must not aut
 ## Development
 
 ```bash
-pytest -q
+pytest -q        # 52 unit tests
+ruff check .     # lint
+mypy .           # type check
 python -m compileall -q .
 ```
 
-The GitHub workflow runs tests and compilation. See `CONTRIBUTING.md`, `SECURITY.md`, `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`, and `docs/API.md`.
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs `pytest` and `ruff check .` on every push and pull request. See `CONTRIBUTING.md`, `SECURITY.md`, `docs/ARCHITECTURE.md`, `docs/THREAT_MODEL.md`, and `docs/API.md`.
