@@ -37,32 +37,69 @@ See `docs/PHASES.md` for the completion matrix.
 
 ## Quick start
 
+### 1. Create and activate a virtual environment (Python 3.12+)
+
 ```bash
 python -m venv .venv
-# Linux/macOS
-source .venv/bin/activate
-# Windows PowerShell
-# .\\.venv\\Scripts\\Activate.ps1
-
-pip install -e ".[dev]"
-
-# Both entry points are equivalent:
-sentinelsec init
-python -m apps.cli.main init
-
-python -m apps.cli.main target add local-lab --url http://127.0.0.1:8080 --authorized
-python -m apps.cli.main target scope-add local-lab 127.0.0.1 8080
 ```
+
+**Linux/macOS:**
+
+```bash
+source .venv/bin/activate
+```
+
+**Windows PowerShell:**
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+> **Windows notes**
+> - If PowerShell refuses activation with *"running scripts is disabled on this system"*, run
+>   `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` for this terminal session, or skip
+>   activation entirely and invoke the venv binaries directly (see step 2).
+> - If `python -m venv` opens the Microsoft Store instead, use `py -3.12 -m venv .venv`.
+
+### 2. Install
+
+```bash
+pip install -e ".[dev]"
+```
+
+If the venv is not activated, call the venv's tools directly instead:
+
+```powershell
+# Windows (no activation required)
+.venv\Scripts\python.exe -m pip install -e ".[dev]"
+```
+
+```bash
+# Linux/macOS (no activation required)
+.venv/bin/python -m pip install -e ".[dev]"
+```
+
+### 3. Initialize and register the lab target
+
+```bash
+sentinelsec init
+sentinelsec target add local-lab --url http://127.0.0.1:8080 --authorized
+sentinelsec target scope-add local-lab 127.0.0.1 8080
+```
+
+`python -m apps.cli.main ...` is always equivalent to `sentinelsec ...` (e.g.
+`python -m apps.cli.main init`). If `sentinelsec` is not on `PATH`, invoke the venv binary directly:
+`.venv\Scripts\sentinelsec.exe` (Windows) or `.venv/bin/sentinelsec` (Linux/macOS).
 
 ### Run the included lab
 
 ```bash
 docker compose -f lab/docker-compose.yml up -d --build
-python -m apps.cli.main scan local-lab
-python -m apps.cli.main assessment status 1
-python -m apps.cli.main findings --assessment-id 1
-python -m apps.cli.main report --assessment-id 1 --fmt html
-python -m apps.cli.main report --assessment-id 1 --fmt pdf
+sentinelsec scan local-lab
+sentinelsec assessment status 1
+sentinelsec findings --assessment-id 1
+sentinelsec report --assessment-id 1 --fmt html
+sentinelsec report --assessment-id 1 --fmt pdf
 docker compose -f lab/docker-compose.yml down
 ```
 
