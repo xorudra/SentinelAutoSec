@@ -37,6 +37,24 @@ See `docs/PHASES.md` for the completion matrix.
 
 ## Quick start
 
+### One-line setup (no activation needed)
+
+**Windows PowerShell:**
+
+```powershell
+python -m venv .venv; .venv\Scripts\python -m pip install -e ".[dev]"; .venv\Scripts\sentinelsec init
+```
+
+**Linux/macOS:**
+
+```bash
+python3 -m venv .venv && .venv/bin/python -m pip install -e ".[dev]" && .venv/bin/sentinelsec init
+```
+
+Afterwards, run any CLI command the same way, e.g. `.venv\Scripts\sentinelsec scan local-lab`
+(Windows) or `.venv/bin/sentinelsec scan local-lab` (Linux/macOS). Or activate the venv once
+(see steps 1–2 below) and just use `sentinelsec ...` directly.
+
 ### 1. Create and activate a virtual environment (Python 3.12+)
 
 ```bash
