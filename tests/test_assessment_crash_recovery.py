@@ -3,12 +3,14 @@ from datetime import UTC, datetime, timedelta
 
 from core import jobs
 from core.checkpoints import checkpoint_state, save_checkpoint
-from core.db import SessionLocal
+from core.db import SessionLocal, init_db
 from database.models import Assessment, Job, Target
 
 
 def _make_recovery_assessment():
     unique = f"recovery-{time.time_ns()}"
+
+    init_db()
 
     with SessionLocal() as db:
         target = Target(
