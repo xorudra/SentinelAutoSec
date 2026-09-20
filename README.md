@@ -35,103 +35,46 @@ See `docs/PHASES.md` for the completion matrix.
 - Python **3.12+**
 - Optional: Docker (for the loopback lab), Nmap, Nuclei, OWASP ZAP (EXTENDED profile tools degrade gracefully when absent)
 
-## Quick start
+## Quick start — just two commands
 
-### One-line setup (no activation needed)
-
-**Windows PowerShell:**
-
-```powershell
-python -m venv .venv; .venv\Scripts\python -m pip install -e ".[dev]"; .venv\Scripts\sentinelsec init
-```
-
-**Linux/macOS:**
+### Command 1 · Setup Environment
 
 ```bash
-python3 -m venv .venv && .venv/bin/python -m pip install -e ".[dev]" && .venv/bin/sentinelsec init
+python setup_environment.py
 ```
 
-Afterwards, run any CLI command the same way, e.g. `.venv\Scripts\sentinelsec scan local-lab`
-(Windows) or `.venv/bin/sentinelsec scan local-lab` (Linux/macOS). Or activate the venv once
-(see steps 1–2 below) and just use `sentinelsec ...` directly.
+Creates the `.venv` virtual environment, installs all dependencies and initializes the SQLite database. Safe to re-run at any time.
 
-### 1. Create and activate a virtual environment (Python 3.12+)
+### Command 2 · Launch the Web Dashboard
 
 ```bash
-python -m venv .venv
+python launch_dashboard.py
 ```
 
-**Linux/macOS:**
+Starts the dashboard on a free local port (`127.0.0.1`), opens it in your browser, and keeps it running until you press `Ctrl+C`.
 
-```bash
-source .venv/bin/activate
-```
+> If `python` opens the Microsoft Store instead, use `py` instead of `python` (e.g. `py setup_environment.py`).
 
-**Windows PowerShell:**
+### Using the dashboard (everything is GUI from here)
 
-```powershell
-.venv\Scripts\Activate.ps1
-```
+1. **Add a target** — Targets section: name + URL (e.g. `http://127.0.0.1:8080`), keep *Authorized* checked, click **Add target**.
+2. **Add scope** — mandatory: pick the target, enter host and port, click **Add scope entry**.
+3. **Create assessment** — pick the target and a profile (`SAFE`/`EXTENDED`), click **Create assessment**.
+4. **Start** — click **Start** in the assessment row; status and progress refresh automatically every few seconds.
+5. **Inspect findings** — the Findings table updates live; click a row to see evidence and remediation.
+6. **Reports** — click **Report** to generate, **Open** to view the HTML report in a new tab (Markdown/JSON/HTML/PDF are generated).
 
-> **Windows notes**
-> - If PowerShell refuses activation with *"running scripts is disabled on this system"*, run
->   `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` for this terminal session, or skip
->   activation entirely and invoke the venv binaries directly (see step 2).
-> - If `python -m venv` opens the Microsoft Store instead, use `py -3.12 -m venv .venv`.
-
-### 2. Install
-
-```bash
-pip install -e ".[dev]"
-```
-
-If the venv is not activated, call the venv's tools directly instead:
-
-```powershell
-# Windows (no activation required)
-.venv\Scripts\python.exe -m pip install -e ".[dev]"
-```
-
-```bash
-# Linux/macOS (no activation required)
-.venv/bin/python -m pip install -e ".[dev]"
-```
-
-### 3. Initialize and register the lab target
-
-```bash
-sentinelsec init
-sentinelsec target add local-lab --url http://127.0.0.1:8080 --authorized
-sentinelsec target scope-add local-lab 127.0.0.1 8080
-```
-
-`python -m apps.cli.main ...` is always equivalent to `sentinelsec ...` (e.g.
-`python -m apps.cli.main init`). If `sentinelsec` is not on `PATH`, invoke the venv binary directly:
-`.venv\Scripts\sentinelsec.exe` (Windows) or `.venv/bin/sentinelsec` (Linux/macOS).
-
-### Run the included lab
+### Optional: scan the included loopback lab
 
 ```bash
 docker compose -f lab/docker-compose.yml up -d --build
-sentinelsec scan local-lab
-sentinelsec assessment status 1
-sentinelsec findings --assessment-id 1
-sentinelsec report --assessment-id 1 --fmt html
-sentinelsec report --assessment-id 1 --fmt pdf
-docker compose -f lab/docker-compose.yml down
 ```
 
-If Docker is unavailable, use another HTTP service you own and explicitly scope its host/port.
+Then add `http://127.0.0.1:8080` as a target in the dashboard (scope host `127.0.0.1`, port `8080`) and start an assessment. Stop the lab with `docker compose -f lab/docker-compose.yml down`. If Docker is unavailable, use any HTTP service you own and scope its host/port.
 
-## API / dashboard
+## Direct API access (optional)
 
-```bash
-uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
-```
-
-Open the dashboard at `http://127.0.0.1:8000/` and API docs at `/docs`.
-
-For protected API routes, set `SENTINELSEC_API_KEY` and send `X-API-Key`. Keep the API on loopback for development; production deployments require a real identity/access-control layer and TLS termination.
+Everything in the dashboard is a thin layer over a documented REST API: OpenAPI docs at `/docs` and ReDoc at `/redoc`. For protected API routes, set `SENTINELSEC_API_KEY` and send `X-API-Key`. Keep the API on loopback for development; production deployments require a real identity/access-control layer and TLS termination.
 
 ## Configuration
 
@@ -153,7 +96,7 @@ All settings are environment variables (see `.env.example`):
 
 ## Checkpoint and resume
 
-Each stage records completed modules, pending modules and structured state in SQLite. If execution stops, `assessment resume <id>` continues from the latest checkpoint. Finding fingerprints and idempotent asset/service writes prevent duplicate records on recovery.
+Each stage records completed modules, pending modules and structured state in SQLite. If execution stops, click **Resume** on the assessment in the dashboard (or `POST /assessments/{id}/resume`) to continue from the latest checkpoint. Finding fingerprints and idempotent asset/service writes prevent duplicate records on recovery.
 
 ## Security model
 

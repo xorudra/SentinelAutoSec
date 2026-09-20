@@ -1,7 +1,284 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>SentinelAutoSec Dashboard</title>
-<style>body{font:15px system-ui;margin:0;background:#0b1020;color:#e9eefc}main{max-width:1100px;margin:0 auto;padding:32px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:#151d33;border:1px solid #2a3553;border-radius:14px;padding:18px}.num{font-size:30px;font-weight:700}table{width:100%;border-collapse:collapse;margin-top:18px}td,th{padding:10px;border-bottom:1px solid #2a3553;text-align:left}a{color:#9fc1ff}@media(max-width:700px){.grid{grid-template-columns:1fr 1fr}}</style></head>
-<body><main><h1>SentinelAutoSec</h1><p>Authorized security assessment dashboard · local-first</p>
-<div class="grid"><div class="card"><div>Targets</div><div class="num">{{ targets }}</div></div><div class="card"><div>Assessments</div><div class="num">{{ assessments }}</div></div><div class="card"><div>Findings</div><div class="num">{{ findings }}</div></div><div class="card"><div>Critical</div><div class="num">{{ critical }}</div></div></div>
-<div class="card" style="margin-top:18px"><h2>Quick links</h2><p><a href="/docs">OpenAPI documentation</a> · <a href="/redoc">ReDoc</a></p><p>For API data, use the authenticated JSON endpoints. Keep this service bound to 127.0.0.1 unless a production access-control layer is added.</p></div>
-</main></body></html>
+<style>
+:root{--bg:#0b1020;--panel:#151d33;--line:#2a3553;--txt:#e9eefc;--mut:#93a0c0;--acc:#9fc1ff;--ok:#5dd39e;--bad:#ef6a6a}
+body{font:15px system-ui;margin:0;background:var(--bg);color:var(--txt)}
+main{max-width:1180px;margin:0 auto;padding:28px}
+h1{margin:0 0 4px}h2{margin:26px 0 10px;font-size:18px}
+.mut{color:var(--mut)}.chip{display:inline-block;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:2px 10px;margin-right:6px;font-size:12.5px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+.num{font-size:30px;font-weight:700}
+section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:18px}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+td,th{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:14px;vertical-align:top}
+th{color:var(--mut);font-weight:600}
+input,select,button{font:inherit;background:#0d1428;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 10px}
+button{cursor:pointer}button:hover{border-color:var(--acc)}button:disabled{opacity:.5}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:4px}.field label{font-size:12px;color:var(--mut)}
+.btn{background:#1d2a4a}.btn.primary{background:#274a86;border-color:#3a5fae}
+.btn.small{padding:4px 8px;font-size:12.5px}
+.sev{padding:2px 8px;border-radius:6px;font-size:12px;font-weight:700}
+.sev.CRITICAL{background:#7a1f2b}.sev.HIGH{background:#8a4a12}.sev.MEDIUM{background:#7a6a12}.sev.LOW{background:#2a5a45}.sev.INFO{background:#2a3553}
+.st{font-size:12.5px;padding:2px 8px;border-radius:6px;background:#223055}.st.COMPLETED{background:#1d4a35}.st.FAILED{background:#5a2222}.st.RUNNING{background:#4a3a12}
+.bar{background:#0d1428;border:1px solid var(--line);border-radius:6px;height:10px;min-width:90px;overflow:hidden}
+.bar>div{height:100%;background:var(--acc)}
+.err{color:var(--bad);font-size:12.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ok-msg{color:var(--ok);font-size:13px;min-height:18px}
+#detail{margin-top:12px;background:#0d1428;border:1px solid var(--line);border-radius:10px;padding:14px;white-space:pre-wrap;font-size:13.5px;display:none}
+a{color:var(--acc)}
+@media(max-width:760px){.grid{grid-template-columns:1fr 1fr}}
+</style></head>
+<body><main>
+<h1>SentinelAutoSec</h1>
+<p class="mut">Authorized security assessment dashboard · local-first · <span id="tools"></span></p>
+<div class="grid">
+<div class="card"><div>Targets</div><div class="num" id="s-targets">–</div></div>
+<div class="card"><div>Assessments</div><div class="num" id="s-assess">–</div></div>
+<div class="card"><div>Findings</div><div class="num" id="s-findings">–</div></div>
+<div class="card"><div>Critical</div><div class="num" id="s-critical">–</div></div>
+</div>
+
+<section>
+<h2>Targets</h2>
+<div class="row">
+<div class="field"><label>Name</label><input id="t-name" size="16" placeholder="local-lab"></div>
+<div class="field"><label>URL (http/https)</label><input id="t-url" size="26" placeholder="http://127.0.0.1:8080"></div>
+<div class="field"><label>or IP</label><input id="t-ip" size="14" placeholder="127.0.0.1"></div>
+<div class="field"><label>Authorized</label><input type="checkbox" id="t-auth" checked style="width:18px;height:18px"></div>
+<button class="btn primary" onclick="addTarget()">Add target</button>
+</div>
+<div class="ok-msg" id="t-msg"></div>
+<table><thead><tr><th>ID</th><th>Name</th><th>Auth</th><th>URL / IP</th><th>Scope (host:port)</th></tr></thead><tbody id="targets"></tbody></table>
+<div class="row" style="margin-top:12px">
+<div class="field"><label>Target</label><select id="sc-target" style="min-width:130px"></select></div>
+<div class="field"><label>Host</label><input id="sc-host" size="16" placeholder="127.0.0.1"></div>
+<div class="field"><label>Port</label><input id="sc-port" size="6" placeholder="8080"></div>
+<div class="field"><label>Excluded</label><input type="checkbox" id="sc-excl" style="width:18px;height:18px"></div>
+<button class="btn" onclick="addScope()">Add scope entry</button>
+<span class="mut">Scope is mandatory before an assessment can run.</span>
+</div>
+<div class="ok-msg" id="sc-msg"></div>
+</section>
+
+<section>
+<h2>Assessments</h2>
+<div class="row">
+<div class="field"><label>Target</label><select id="a-target" style="min-width:130px"></select></div>
+<div class="field"><label>Profile</label><select id="a-profile"><option>SAFE</option><option>EXTENDED</option></select></div>
+<button class="btn primary" onclick="createAssessment()">Create assessment</button>
+<span class="mut">Start runs in the background; the table refreshes automatically.</span>
+</div>
+<table><thead><tr><th>ID</th><th>Target</th><th>Profile</th><th>Status</th><th>Stage</th><th>Progress</th><th>Job</th><th>Actions</th></tr></thead><tbody id="assess"></tbody></table>
+<div class="ok-msg" id="a-msg"></div>
+</section>
+
+<section>
+<h2>Findings</h2>
+<div class="row">
+<div class="field"><label>Assessment</label><select id="f-filter" onchange="loadFindings()" style="min-width:160px"><option value="">All</option></select></div>
+<button class="btn" onclick="loadFindings(true)">Refresh now</button>
+</div>
+<table><thead><tr><th>ID</th><th>Severity</th><th>Title</th><th>Asset</th><th>CWE</th><th>Status</th></tr></thead><tbody id="findings"></tbody></table>
+<div id="detail"></div>
+</section>
+
+<section>
+<h2>Activity</h2>
+<table><thead><tr><th>When</th><th>Action</th><th>Target</th><th>Result</th></tr></thead><tbody id="audit"></tbody></table>
+</section>
+
+<p class="mut" style="margin-top:20px">OpenAPI docs: <a href="/docs">/docs</a> · ReDoc: <a href="/redoc">/redoc</a> · Keep this service bound to 127.0.0.1 unless a production access-control layer is added.</p>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const $ = id => document.getElementById(id);
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail || detail; } catch (e) {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+async function loadStats() {
+  try {
+    const targets = await api("/targets");
+    const assess = await api("/assessments");
+    const findings = await api("/findings");
+    $("s-targets").textContent = targets.length;
+    $("s-assess").textContent = assess.length;
+    $("s-findings").textContent = findings.length;
+    $("s-critical").textContent = findings.filter(f => f.severity === "CRITICAL").length;
+  } catch (e) { console.error(e); }
+}
+
+function targetOptions(selectEl, targets) {
+  const current = selectEl.value;
+  selectEl.innerHTML = targets.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join("");
+  if (targets.some(t => String(t.id) === current)) selectEl.value = current;
+}
+
+async function loadTargets() {
+  try {
+    const targets = await api("/targets");
+    targetOptions($("sc-target"), targets);
+    targetOptions($("a-target"), targets);
+    $("targets").innerHTML = targets.map(t => `<tr>
+      <td>${t.id}</td><td>${esc(t.name)}</td>
+      <td>${t.authorized ? "✅" : "—"}</td>
+      <td>${esc(t.url || t.ip || "")}</td>
+      <td>${(t.scope || []).map(s => `<span class="chip">${esc(s.host)}:${s.port ?? "*"}${s.excluded ? " (excluded)" : ""}</span>`).join("") || '<span class="mut">none</span>'}</td>
+    </tr>`).join("");
+  } catch (e) { $("targets").innerHTML = `<tr><td colspan="5" class="err">${esc(e.message)}</td></tr>`; }
+}
+
+async function addTarget() {
+  const name = $("t-name").value.trim();
+  const url = $("t-url").value.trim();
+  const ip = $("t-ip").value.trim();
+  const msg = $("t-msg");
+  try {
+    if (!name) throw new Error("Name is required.");
+    if (!url && !ip) throw new Error("Provide a URL or an IP.");
+    const body = { name, authorized: $("t-auth").checked };
+    if (url) body.url = url;
+    if (ip) body.ip = ip;
+    await api("/targets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    msg.textContent = `Target "${name}" created.`;
+    $("t-name").value = $("t-url").value = $("t-ip").value = "";
+    await loadTargets();
+  } catch (e) { msg.textContent = "Error: " + e.message; }
+}
+
+async function addScope() {
+  const targetId = $("sc-target").value;
+  const host = $("sc-host").value.trim();
+  const port = $("sc-port").value.trim();
+  const msg = $("sc-msg");
+  try {
+    if (!targetId) throw new Error("Create a target first.");
+    if (!host) throw new Error("Host is required.");
+    const body = { host };
+    if (port) body.port = Number(port);
+    body.excluded = $("sc-excl").checked;
+    await api(`/targets/${targetId}/scope`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    msg.textContent = "Scope entry added.";
+    $("sc-host").value = $("sc-port").value = "";
+    await loadTargets();
+  } catch (e) { msg.textContent = "Error: " + e.message; }
+}
+async function loadAssessments() {
+  try {
+    const [assess, targets] = await Promise.all([api("/assessments"), api("/targets")]);
+    const names = Object.fromEntries(targets.map(t => [t.id, t.name]));
+    $("assess").innerHTML = assess.map(a => {
+      const canStart = !["RUNNING", "COMPLETED"].includes(a.status);
+      return `<tr>
+      <td>${a.id}</td><td>${esc(names[a.target_id] ?? a.target_id)}</td><td>${esc(a.profile)}</td>
+      <td><span class="st ${esc(a.status)}">${esc(a.status)}</span></td>
+      <td>${esc(a.stage ?? "—")}</td>
+      <td><div class="bar"><div style="width:${a.progress ?? 0}%"></div></div> <span class="mut">${a.progress ?? 0}%</span></td>
+      <td>${esc(a.job ?? "—")}</td>
+      <td style="white-space:nowrap">
+        <button class="btn small" onclick="startAssessment(${a.id})" ${canStart ? "" : "disabled"}>Start</button>
+        <button class="btn small" onclick="resumeAssessment(${a.id})" ${a.status === "COMPLETED" ? "disabled" : ""}>Resume</button>
+        <button class="btn small" onclick="makeReport(${a.id},'html')">Report</button>
+        <button class="btn small" onclick="openReport(${a.id})" title="Open HTML report in a new tab">Open</button>
+      </td></tr>`;
+    }).join("");
+    const filter = $("f-filter");
+    const current = filter.value;
+    filter.innerHTML = '<option value="">All</option>' + assess.map(a => `<option value="${a.id}">#${a.id} — ${esc(names[a.target_id] ?? "")}</option>`).join("");
+    if ([...filter.options].some(o => o.value === current)) filter.value = current;
+  } catch (e) { $("assess").innerHTML = `<tr><td colspan="8" class="err">${esc(e.message)}</td></tr>`; }
+}
+
+async function createAssessment() {
+  const msg = $("a-msg");
+  try {
+    const targetId = $("a-target").value;
+    if (!targetId) throw new Error("Create a target first.");
+    const a = await api("/assessments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_id: Number(targetId), profile: $("a-profile").value }) });
+    msg.textContent = `Assessment #${a.id} created — press Start to run it.`;
+    await loadAssessments();
+  } catch (e) { msg.textContent = "Error: " + e.message; }
+}
+
+async function startAssessment(id) {
+  const msg = $("a-msg");
+  try {
+    await api(`/assessments/${id}/start?background=true`, { method: "POST" });
+    msg.textContent = `Assessment #${id} started.`;
+  } catch (e) { msg.textContent = "Error: " + e.message; }
+}
+
+async function resumeAssessment(id) {
+  const msg = $("a-msg");
+  try {
+    await api(`/assessments/${id}/resume`, { method: "POST" });
+    msg.textContent = `Assessment #${id} queued for resume from its last checkpoint.`;
+  } catch (e) { msg.textContent = "Error: " + e.message; }
+}
+
+async function makeReport(id, fmt) {
+  const msg = $("a-msg");
+  try {
+    const r = await api(`/reports?assessment_id=${id}&fmt=${fmt}`, { method: "POST" });
+    msg.textContent = `Report #${id} (${fmt}): ${r.path}`;
+  } catch (e) { msg.textContent = "Error: " + e.message; }
+}
+
+function openReport(id) { window.open(`/reports/view?assessment_id=${id}&fmt=html`, "_blank"); }
+
+async function loadFindings(manual) {
+  try {
+    const filter = $("f-filter").value;
+    const findings = await api("/findings" + (filter ? `?assessment_id=${filter}` : ""));
+    $("findings").innerHTML = findings.map(f => `<tr style="cursor:pointer" onclick="showFinding(${f.id})">
+      <td>${f.id}</td>
+      <td><span class="sev ${esc(f.severity)}">${esc(f.severity)}</span></td>
+      <td>${esc(f.title)}</td><td>${esc(f.asset)}</td><td>${esc(f.cwe ?? "—")}</td>
+      <td>${esc(f.status)}</td></tr>`).join("") || '<tr><td colspan="6" class="mut">No findings yet.</td></tr>';
+  } catch (e) { if (manual) $("findings").innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`; }
+}
+
+async function showFinding(id) {
+  const box = $("detail");
+  try {
+    const f = await api(`/findings/${id}`);
+    box.style.display = "block";
+    box.textContent = `#${f.id} [${f.severity}] ${f.title}\nAsset: ${f.asset}  ·  CWE: ${f.cwe ?? "—"}  ·  Confidence: ${f.confidence}\n\nEvidence:\n${f.evidence}\n\nRemediation:\n${f.remediation}`;
+  } catch (e) { box.style.display = "block"; box.textContent = "Error: " + e.message; }
+}
+
+async function loadAudit() {
+  try {
+    const logs = await api("/audit-logs");
+    $("audit").innerHTML = logs.slice(0, 10).map(l => `<tr>
+      <td class="mut">${esc((l.created_at || "").replace("T", " ").slice(0, 19))}</td>
+      <td>${esc(l.action)}</td><td>${esc(l.target ?? "—")}</td>
+      <td class="${l.result === "FAILED" ? "err" : "ok-msg"}">${esc(l.result)}</td></tr>`).join("");
+  } catch (e) { console.error(e); }
+}
+
+async function loadTools() {
+  try {
+    const t = await api("/tools");
+    $("tools").innerHTML = ["nmap", "nuclei", "zap_baseline"].map(k => `<span class="chip">${k}: ${t[k] ? "available" : "not installed"}</span>`).join("");
+  } catch (e) { console.error(e); }
+}
+
+async function refreshAll() {
+  await Promise.all([loadStats(), loadTargets(), loadAssessments(), loadFindings(), loadAudit()]);
+}
+
+refreshAll();
+loadTools();
+setInterval(refreshAll, 3000);
+</script>
+</body></html>

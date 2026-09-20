@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-CLI / REST API / Dashboard
+Web Dashboard / REST API
           |
           v
   Authorization + Scope Gate

@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -344,6 +344,24 @@ def create_report(assessment_id: int, fmt: str = "markdown"):
             )
             db.commit()
     return {"path": str(path)}
+
+
+@app.get("/reports/view", dependencies=[Depends(auth)])
+def view_report(assessment_id: int, fmt: str = "html"):
+    fmt = fmt.lower()
+    suffix = {"markdown": "md"}.get(fmt, fmt)
+    if suffix not in {"md", "json", "html", "pdf"}:
+        raise HTTPException(400, "Format must be markdown, json, html, or pdf.")
+    path = settings.reports_dir / f"assessment-{assessment_id}.{suffix}"
+    if not path.exists():
+        raise HTTPException(404, "Report not found. Generate it first.")
+    media = {
+        "html": "text/html",
+        "json": "application/json",
+        "pdf": "application/pdf",
+        "md": "text/markdown",
+    }
+    return FileResponse(path, media_type=media[suffix], filename=path.name)
 
 
 @app.get("/", response_class=HTMLResponse)

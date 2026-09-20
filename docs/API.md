@@ -26,6 +26,7 @@ Core routes:
 - `GET /assets`
 - `GET /audit-logs`
 - `POST /reports?assessment_id=1&fmt=html`
+- `GET /reports/view?assessment_id=1&fmt=html`
 - `GET /docs`
 
 Keep the server bound to loopback unless you add a production authentication/reverse-proxy layer.
