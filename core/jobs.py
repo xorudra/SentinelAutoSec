@@ -66,7 +66,7 @@ def _heartbeat(
                 job.updated_at = _now()
                 db.commit()
 
-        except (OSError, RuntimeError):
+        except Exception:  # noqa: BLE001, S112 -- heartbeat must never kill the worker
             # Heartbeat failure must never crash the assessment worker.
             # The main worker remains responsible for the assessment.
             continue
@@ -188,7 +188,11 @@ def submit_assessment(assessment_id: int) -> None:
             status = "COMPLETED"
             error = None
 
-        except (OSError, RuntimeError, ValueError) as exc:
+        except Exception as exc:  # noqa: BLE001 -- deliberately broad: Job must never stay RUNNING
+            # Any failure (including unexpected scanner exceptions such as
+            # httpx network errors) must be recorded so the Job does not
+            # remain stuck in RUNNING. Stale-job recovery can resume the
+            # assessment from its latest durable checkpoint afterwards.
             status = "FAILED"
             error = str(exc)
 

@@ -1,5 +1,4 @@
 import hashlib
-import re
 from dataclasses import dataclass
 
 import httpx
@@ -53,22 +52,34 @@ def analyze(url: str, timeout: float = 10) -> tuple[list[WebFinding], dict]:
                     cwe,
                 )
             )
-    set_cookie = headers.get("set-cookie", "")
-    if set_cookie:
-        cookies = re.split(r"(?i)(?=\b(?:__Host-|__Secure-|[A-Za-z0-9_-]+)=)", set_cookie)
-        if any("secure" not in c.lower() for c in cookies if c.strip()):
-            findings.append(
-                WebFinding(
-                    _fp(str(final), "cookie-secure"),
-                    "Cookie missing Secure attribute",
-                    "MEDIUM",
-                    "HIGH",
-                    "Security Misconfiguration",
-                    "A Set-Cookie response was observed without Secure.",
-                    "Set Secure on cookies that should only travel over HTTPS.",
-                    "CWE-614",
-                )
+    set_cookies = response.headers.get_list("set-cookie")
+    cookies_without_secure = []
+    for cookie in set_cookies:
+        # Only the attribute portion (after the first ';') determines the
+        # Secure flag — the cookie name or value may itself contain the
+        # substring "secure".
+        attributes = cookie.split(";")[1:]
+        attribute_names = {
+            attr.strip().split("=", 1)[0].lower() for attr in attributes if attr.strip()
+        }
+        if "secure" not in attribute_names:
+            cookies_without_secure.append(cookie)
+    if cookies_without_secure:
+        findings.append(
+            WebFinding(
+                _fp(str(final), "cookie-secure"),
+                "Cookie missing Secure attribute",
+                "MEDIUM",
+                "HIGH",
+                "Security Misconfiguration",
+                (
+                    f"{len(cookies_without_secure)} of {len(set_cookies)} Set-Cookie "
+                    "headers lacked the Secure attribute."
+                ),
+                "Set Secure on cookies that should only travel over HTTPS.",
+                "CWE-614",
             )
+        )
     if str(final).lower().startswith("http://") and final.host not in (
         "127.0.0.1",
         "localhost",

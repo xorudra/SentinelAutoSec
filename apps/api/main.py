@@ -1,3 +1,6 @@
+from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -24,12 +27,33 @@ from integrations.external.zap import available as zap_available
 from integrations.nmap.adapter import available as nmap_available
 from reporting.generator import build_report
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+
+    from core.jobs import recover_stale_jobs
+
+    # First recover jobs whose workers disappeared.
+    recover_stale_jobs()
+
+    # Then start queued jobs.
+    with SessionLocal() as db:
+        queued = [j.assessment_id for j in db.query(Job).filter(Job.status == "QUEUED").all()]
+
+    for assessment_id in queued:
+        submit_assessment(assessment_id)
+
+    yield
+
+
 app = FastAPI(
     title="SentinelAutoSec API",
     version="1.0.0",
     description="Authorized security assessment automation with strict scope enforcement.",
+    lifespan=lifespan,
 )
-templates = Jinja2Templates(directory="apps/api/templates")
+templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
 
 class TargetCreate(BaseModel):
@@ -53,23 +77,6 @@ class AssessmentCreate(BaseModel):
 def auth(x_api_key: str | None = Header(default=None)):
     if settings.api_key and x_api_key != settings.api_key:
         raise HTTPException(401, "Invalid API key")
-
-
-@app.on_event("startup")
-def startup():
-    init_db()
-
-    from core.jobs import recover_stale_jobs
-
-    # First recover jobs whose workers disappeared.
-    recover_stale_jobs()
-
-    # Then start queued jobs.
-    with SessionLocal() as db:
-        queued = [j.assessment_id for j in db.query(Job).filter(Job.status == "QUEUED").all()]
-
-    for assessment_id in queued:
-        submit_assessment(assessment_id)
 
 
 @app.get("/health")
@@ -169,6 +176,10 @@ def start_assessment(assessment_id: int, background: bool = True):
         run_assessment(assessment_id)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        # Unexpected failures (e.g. network errors from scanners) must still
+        # produce a defined API response instead of an unhandled 500 traceback.
+        raise HTTPException(500, f"Assessment failed: {exc}") from exc
     return {"id": assessment_id, "status": "COMPLETED"}
 
 
@@ -344,7 +355,7 @@ def dashboard(request: Request):
         critical = db.query(Finding).filter(Finding.severity == "CRITICAL").count()
     return templates.TemplateResponse(
         request=request,
-        name="index.html",
+        name="dashboard.html",
         context={
             "targets": targets,
             "assessments": assessments_n,
