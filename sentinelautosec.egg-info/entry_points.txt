@@ -1,0 +1,2 @@
+[console_scripts]
+sentinelsec = apps.cli.main:app

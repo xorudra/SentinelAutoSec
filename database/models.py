@@ -1,0 +1,149 @@
+from datetime import UTC, datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from core.db import Base
+
+
+def now():
+    return datetime.now(UTC)
+
+
+class Target(Base):
+    __tablename__ = "targets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True)
+    hostname: Mapped[str | None] = mapped_column(String(255))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    url: Mapped[str | None] = mapped_column(String(2048))
+    target_type: Mapped[str] = mapped_column(String(40), default="WEB_APPLICATION")
+    environment: Mapped[str] = mapped_column(String(40), default="LAB")
+    owner: Mapped[str | None] = mapped_column(String(120))
+    authorization_status: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+    scopes = relationship("TargetScope", back_populates="target", cascade="all, delete-orphan")
+    assessments = relationship("Assessment", back_populates="target", cascade="all, delete-orphan")
+
+
+class TargetScope(Base):
+    __tablename__ = "target_scopes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"), index=True)
+    host: Mapped[str] = mapped_column(String(255))
+    port: Mapped[int | None] = mapped_column(Integer)
+    excluded: Mapped[bool] = mapped_column(Boolean, default=False)
+    target = relationship("Target", back_populates="scopes")
+
+
+class Assessment(Base):
+    __tablename__ = "assessments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"), index=True)
+    profile: Mapped[str] = mapped_column(String(30), default="SAFE")
+    status: Mapped[str] = mapped_column(String(30), default="QUEUED")
+    current_stage: Mapped[str | None] = mapped_column(String(80))
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    target = relationship("Target", back_populates="assessments")
+    findings = relationship("Finding", back_populates="assessment", cascade="all, delete-orphan")
+    checkpoints = relationship(
+        "Checkpoint", back_populates="assessment", cascade="all, delete-orphan"
+    )
+
+
+class Asset(Base):
+    __tablename__ = "assets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assessment_id: Mapped[int] = mapped_column(ForeignKey("assessments.id"), index=True)
+    host: Mapped[str] = mapped_column(String(255))
+    kind: Mapped[str] = mapped_column(String(40), default="HOST")
+
+
+class Service(Base):
+    __tablename__ = "services"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    port: Mapped[int] = mapped_column(Integer)
+    protocol: Mapped[str] = mapped_column(String(10), default="TCP")
+    name: Mapped[str | None] = mapped_column(String(80))
+    version: Mapped[str | None] = mapped_column(String(255))
+
+
+class Finding(Base):
+    __tablename__ = "findings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assessment_id: Mapped[int] = mapped_column(ForeignKey("assessments.id"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(128), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    severity: Mapped[str] = mapped_column(String(20))
+    confidence: Mapped[str] = mapped_column(String(20))
+    category: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(30), default="DETECTED")
+    asset: Mapped[str] = mapped_column(String(255))
+    evidence: Mapped[str] = mapped_column(Text)
+    remediation: Mapped[str] = mapped_column(Text)
+    cwe: Mapped[str | None] = mapped_column(String(30))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    assessment = relationship("Assessment", back_populates="findings")
+
+    asset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("assets.id"),
+        nullable=True,
+        index=True,
+    )
+    service_id: Mapped[int | None] = mapped_column(
+        ForeignKey("services.id"),
+        nullable=True,
+        index=True,
+    )
+
+
+class Evidence(Base):
+    __tablename__ = "evidence"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assessment_id: Mapped[int] = mapped_column(ForeignKey("assessments.id"), index=True)
+    finding_id: Mapped[int | None] = mapped_column(ForeignKey("findings.id"))
+    tool: Mapped[str] = mapped_column(String(80))
+    evidence_type: Mapped[str] = mapped_column(String(80))
+    content: Mapped[str] = mapped_column(Text)
+    collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class Checkpoint(Base):
+    __tablename__ = "checkpoints"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assessment_id: Mapped[int] = mapped_column(ForeignKey("assessments.id"), index=True)
+    stage: Mapped[str] = mapped_column(String(80))
+    completed_modules: Mapped[str] = mapped_column(Text, default="[]")
+    pending_modules: Mapped[str] = mapped_column(Text, default="[]")
+    state_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    assessment = relationship("Assessment", back_populates="checkpoints")
+
+
+class Job(Base):
+    __tablename__ = "jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    assessment_id: Mapped[int] = mapped_column(
+        ForeignKey("assessments.id"), unique=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(30), default="QUEUED")
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor: Mapped[str] = mapped_column(String(120), default="local-user")
+    action: Mapped[str] = mapped_column(String(120))
+    target: Mapped[str | None] = mapped_column(String(255))
+    result: Mapped[str] = mapped_column(String(30))
+    details: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

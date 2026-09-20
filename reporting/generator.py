@@ -1,0 +1,197 @@
+import html
+import json
+from pathlib import Path
+
+from core.config import settings
+from core.db import SessionLocal
+from core.risk import calculate_risk
+
+OUT = settings.reports_dir
+
+
+def _data(assessment_id, status_override=None, progress_override=None):
+    with SessionLocal() as db:
+        from database.models import Assessment, Asset, Evidence, Service
+
+        a = db.get(Assessment, assessment_id)
+        if not a:
+            raise ValueError("Assessment not found.")
+        rows = []
+        for f in a.findings:
+            related_asset = db.get(Asset, f.asset_id) if f.asset_id else None
+            related_service = db.get(Service, f.service_id) if f.service_id else None
+
+            rows.append(
+                {
+                    "id": f.id,
+                    "title": f.title,
+                    "severity": f.severity,
+                    "confidence": f.confidence,
+                    "category": f.category,
+                    "asset": f.asset,
+                    "asset_id": f.asset_id,
+                    "asset_kind": related_asset.kind if related_asset else None,
+                    "service_id": f.service_id,
+                    "service": {
+                        "port": related_service.port,
+                        "protocol": related_service.protocol,
+                        "name": related_service.name,
+                        "version": related_service.version,
+                    }
+                    if related_service
+                    else None,
+                    "cwe": f.cwe,
+                    "status": f.status,
+                    "risk": calculate_risk(f.severity, f.confidence),
+                    "evidence": f.evidence,
+                    "remediation": f.remediation,
+                }
+            )
+        assets = []
+        for asset in db.query(Asset).filter_by(assessment_id=assessment_id).all():
+            assets.append(
+                {
+                    "host": asset.host,
+                    "kind": asset.kind,
+                    "services": [
+                        {
+                            "port": s.port,
+                            "protocol": s.protocol,
+                            "name": s.name,
+                            "version": s.version,
+                        }
+                        for s in db.query(Service).filter_by(asset_id=asset.id).all()
+                    ],
+                }
+            )
+        evidence_count = db.query(Evidence).filter_by(assessment_id=assessment_id).count()
+        return {
+            "assessment": a.id,
+            "target": a.target.name,
+            "status": status_override if status_override is not None else a.status,
+            "profile": a.profile,
+            "progress": progress_override if progress_override is not None else a.progress,
+            "findings": rows,
+            "assets": assets,
+            "evidence_count": evidence_count,
+        }
+
+
+def build_report(
+    assessment_id: int, fmt: str = "markdown", status_override=None, progress_override=None
+) -> Path:
+    data = _data(
+        assessment_id, status_override=status_override, progress_override=progress_override
+    )
+    fmt = fmt.lower()
+    if fmt not in {"markdown", "json", "html", "pdf"}:
+        raise ValueError("Format must be markdown, json, html, or pdf.")
+    OUT.mkdir(parents=True, exist_ok=True)
+    if fmt == "json":
+        path = OUT / f"assessment-{assessment_id}.json"
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        return path
+    if fmt == "html":
+        cards = (
+            "".join(
+                f"<article><h2>#{r['id']} {html.escape(r['title'])}</h2><p><b>{html.escape(r['severity'])}</b> ?? confidence {html.escape(r['confidence'])} ?? risk {r['risk']}/10</p><p>{html.escape(r['evidence'])}</p><h3>Remediation</h3><p>{html.escape(r['remediation'])}</p></article>"
+                for r in data["findings"]
+            )
+            or "<p>No findings.</p>"
+        )
+        assets = (
+            "".join(
+                f"<li><code>{html.escape(a['host'])}</code> ({html.escape(a['kind'])}) ??? {len(a['services'])} service(s)</li>"
+                for a in data["assets"]
+            )
+            or "<li>None</li>"
+        )
+        body = f"<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width'><title>SentinelAutoSec Report</title><style>body{{font:16px system-ui;max-width:1000px;margin:40px auto;padding:0 20px}}article{{border:1px solid #ddd;border-radius:12px;padding:18px;margin:14px 0}}code{{background:#eee;padding:2px 5px}}small{{color:#666}}</style></head><body><h1>SentinelAutoSec Assessment #{assessment_id}</h1><p>Target: <code>{html.escape(data['target'])}</code> ?? Status: {html.escape(data['status'])} ?? Profile: {html.escape(data['profile'])}</p><h2>Assets</h2><ul>{assets}</ul><h2>Findings ({len(data['findings'])})</h2>{cards}<footer><small>Generated by SentinelAutoSec. Use only for authorized assessments.</small></footer></body></html>"
+        path = OUT / f"assessment-{assessment_id}.html"
+        path.write_text(body, encoding="utf-8")
+        return path
+    if fmt == "pdf":
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+        path = OUT / f"assessment-{assessment_id}.pdf"
+        doc = SimpleDocTemplate(
+            str(path), pagesize=A4, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
+        )
+        styles = getSampleStyleSheet()
+        story = [
+            Paragraph(f"SentinelAutoSec Assessment #{assessment_id}", styles["Title"]),
+            Paragraph(
+                f"Target: {html.escape(data['target'])} | Status: {html.escape(data['status'])} | Profile: {html.escape(data['profile'])}",
+                styles["BodyText"],
+            ),
+            Spacer(1, 12),
+        ]
+        story.append(
+            Paragraph(
+                f"Findings: {len(data['findings'])} | Evidence records: {data['evidence_count']}",
+                styles["BodyText"],
+            )
+        )
+        story.append(Spacer(1, 10))
+        table = Table(
+            [["ID", "Severity", "Risk", "Title"]]
+            + [
+                [str(r["id"]), r["severity"], str(r["risk"]), r["title"][:70]]
+                for r in data["findings"]
+            ],
+            repeatRows=1,
+        )
+        table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story += [table, Spacer(1, 16)]
+        for r in data["findings"]:
+            story += [
+                Paragraph(f"#{r['id']} {html.escape(r['title'])}", styles["Heading2"]),
+                Paragraph(
+                    f"Severity: {html.escape(r['severity'])} | Confidence: {html.escape(r['confidence'])} | Risk: {r['risk']}/10 | CWE: {html.escape(str(r['cwe']))}",
+                    styles["BodyText"],
+                ),
+                Paragraph(html.escape(r["evidence"]), styles["BodyText"]),
+                Paragraph(
+                    "<b>Remediation:</b> " + html.escape(r["remediation"]), styles["BodyText"]
+                ),
+                Spacer(1, 10),
+            ]
+        doc.build(story)
+        return path
+    path = OUT / f"assessment-{assessment_id}.md"
+    lines = [
+        f"# SentinelAutoSec Assessment #{assessment_id}",
+        f"Target: `{data['target']}`",
+        f"Status: `{data['status']}`",
+        f"Profile: `{data['profile']}`",
+        "",
+        f"## Findings ({len(data['findings'])})",
+    ]
+    for r in data["findings"]:
+        lines += [
+            f"### #{r['id']} {r['title']}",
+            f"- Severity: {r['severity']}",
+            f"- Confidence: {r['confidence']}",
+            f"- Risk: {r['risk']}/10",
+            f"- Asset: {r['asset']}",
+            f"- CWE: {r['cwe']}",
+            f"- Evidence: {r['evidence']}",
+            f"- Remediation: {r['remediation']}",
+            "",
+        ]
+    lines += ["## Assets"] + [
+        f"- `{a['host']}` ({a['kind']}): {len(a['services'])} service(s)" for a in data["assets"]
+    ]
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path

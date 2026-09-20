@@ -1,0 +1,7 @@
+apps
+core
+database
+integrations
+modules
+reporting
+security

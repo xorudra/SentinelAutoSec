@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>SentinelAutoSec Dashboard</title>
+<style>body{font:15px system-ui;margin:0;background:#0b1020;color:#e9eefc}main{max-width:1100px;margin:0 auto;padding:32px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{background:#151d33;border:1px solid #2a3553;border-radius:14px;padding:18px}.num{font-size:30px;font-weight:700}table{width:100%;border-collapse:collapse;margin-top:18px}td,th{padding:10px;border-bottom:1px solid #2a3553;text-align:left}a{color:#9fc1ff}@media(max-width:700px){.grid{grid-template-columns:1fr 1fr}}</style></head>
+<body><main><h1>SentinelAutoSec</h1><p>Authorized security assessment dashboard · local-first</p>
+<div class="grid"><div class="card"><div>Targets</div><div class="num">{{ targets }}</div></div><div class="card"><div>Assessments</div><div class="num">{{ assessments }}</div></div><div class="card"><div>Findings</div><div class="num">{{ findings }}</div></div><div class="card"><div>Critical</div><div class="num">{{ critical }}</div></div></div>
+<div class="card" style="margin-top:18px"><h2>Quick links</h2><p><a href="/docs">OpenAPI documentation</a> · <a href="/redoc">ReDoc</a></p><p>For API data, use the authenticated JSON endpoints. Keep this service bound to 127.0.0.1 unless a production access-control layer is added.</p></div>
+</main></body></html>

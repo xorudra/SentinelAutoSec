@@ -1,0 +1,17 @@
+fastapi<1,>=0.115
+uvicorn[standard]<1,>=0.30
+typer<1,>=0.12
+rich<15,>=13.7
+pydantic<3,>=2.8
+sqlalchemy<3,>=2.0
+aiosqlite<1,>=0.20
+httpx<1,>=0.27
+jinja2<4,>=3.1
+python-multipart<1,>=0.0.9
+reportlab<5,>=4.2
+
+[dev]
+pytest<9,>=8
+pytest-asyncio<1,>=0.23
+ruff<1,>=0.6
+mypy<2,>=1.11
