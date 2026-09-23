@@ -21,6 +21,7 @@ class Target(Base):
     environment: Mapped[str] = mapped_column(String(40), default="LAB")
     owner: Mapped[str | None] = mapped_column(String(120))
     authorization_status: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_lab: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     scopes = relationship("TargetScope", back_populates="target", cascade="all, delete-orphan")

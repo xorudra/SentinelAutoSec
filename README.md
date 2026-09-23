@@ -59,6 +59,8 @@ Starts the dashboard on a free local port (`127.0.0.1`), opens it in your browse
 
 1. **Add a target** — Targets section: name + URL (e.g. `http://127.0.0.1:8080`), keep *Authorized* checked, click **Add target**.
 2. **Add scope** — mandatory: pick the target, enter host and port. **Leave Port empty to allow and scan ALL ports (1–65535) with Nmap** (slower); enter a specific port to limit the scan. Click **Add scope entry**.
+
+> **Lab data:** lab targets (e.g. the bundled `local-lab` demo) are hidden by default — the dashboard shows only your own scans. Use the **Include lab data** switch at the top of the page to view lab results, and "Mark lab / Unmark lab" on any target row to change its lab status.
 3. **Create assessment** — pick the target and a profile (`SAFE`/`EXTENDED`), click **Create assessment**.
 4. **Start** — click **Start** in the assessment row; status and progress refresh automatically every few seconds.
 5. **Inspect findings** — the Findings table updates live; click a row to see evidence and remediation.

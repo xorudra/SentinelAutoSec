@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, HttpUrl
 
 from core.checkpoints import checkpoint_state
 from core.config import settings
-from core.db import SessionLocal, init_db
+from core.db import SessionLocal, init_db, migrate_schema
 from core.jobs import job_status, submit_assessment
 from core.orchestrator import run_assessment
 from database.models import (
@@ -31,6 +31,8 @@ from reporting.generator import build_report
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    # Additive schema migrations for databases created by older versions.
+    migrate_schema()
 
     from core.jobs import recover_stale_jobs
 
@@ -61,6 +63,11 @@ class TargetCreate(BaseModel):
     url: HttpUrl | None = None
     ip: str | None = None
     authorized: bool = False
+    is_lab: bool = False
+
+
+class TargetLabUpdate(BaseModel):
+    is_lab: bool
 
 
 class ScopeCreate(BaseModel):
@@ -101,6 +108,7 @@ def create_target(data: TargetCreate):
             url=str(data.url) if data.url else None,
             ip=data.ip,
             authorization_status=data.authorized,
+            is_lab=data.is_lab,
         )
         db.add(t)
         db.commit()
@@ -111,21 +119,45 @@ def create_target(data: TargetCreate):
 
 
 @app.get("/targets", dependencies=[Depends(auth)])
-def list_targets():
+def list_targets(include_lab: bool = False):
     with SessionLocal() as db:
+        q = db.query(Target)
+        if not include_lab:
+            q = q.filter(Target.is_lab.is_(False))
         return [
             {
                 "id": t.id,
                 "name": t.name,
                 "authorized": t.authorization_status,
+                "is_lab": t.is_lab,
                 "url": t.url,
                 "ip": t.ip,
                 "scope": [
                     {"host": s.host, "port": s.port, "excluded": s.excluded} for s in t.scopes
                 ],
             }
-            for t in db.query(Target).all()
+            for t in q.all()
         ]
+
+
+@app.post("/targets/{target_id}/lab", dependencies=[Depends(auth)])
+def set_target_lab(target_id: int, data: TargetLabUpdate):
+    with SessionLocal() as db:
+        t = db.get(Target, target_id)
+        if not t:
+            raise HTTPException(404, "Target not found")
+        t.is_lab = data.is_lab
+        db.commit()
+        db.add(
+            AuditLog(
+                action="TARGET_LAB_UPDATE",
+                target=t.name,
+                result="SUCCESS",
+                details=f"is_lab={data.is_lab}",
+            )
+        )
+        db.commit()
+        return {"id": t.id, "name": t.name, "is_lab": t.is_lab}
 
 
 @app.post("/targets/{target_id}/scope", dependencies=[Depends(auth)])
@@ -193,8 +225,13 @@ def resume_assessment(assessment_id: int):
 
 
 @app.get("/assessments", dependencies=[Depends(auth)])
-def assessments():
+def assessments(include_lab: bool = False):
     with SessionLocal() as db:
+        q = db.query(Assessment)
+        if not include_lab:
+            q = q.join(Target, Assessment.target_id == Target.id).filter(
+                Target.is_lab.is_(False)
+            )
         return [
             {
                 "id": a.id,
@@ -206,7 +243,7 @@ def assessments():
                 "error": a.error,
                 "job": job_status(a.id),
             }
-            for a in db.query(Assessment).all()
+            for a in q.all()
         ]
 
 
@@ -219,11 +256,17 @@ def checkpoint(assessment_id: int):
 
 
 @app.get("/findings", dependencies=[Depends(auth)])
-def list_findings(assessment_id: int | None = None):
+def list_findings(assessment_id: int | None = None, include_lab: bool = False):
     with SessionLocal() as db:
         q = db.query(Finding)
         if assessment_id:
             q = q.filter_by(assessment_id=assessment_id)
+        if not include_lab:
+            q = (
+                q.join(Assessment, Finding.assessment_id == Assessment.id)
+                .join(Target, Assessment.target_id == Target.id)
+                .filter(Target.is_lab.is_(False))
+            )
         return [
             {
                 "id": f.id,
@@ -309,8 +352,15 @@ def assets(assessment_id: int | None = None):
 
 
 @app.get("/audit-logs", dependencies=[Depends(auth)])
-def audit_logs():
+def audit_logs(include_lab: bool = False):
     with SessionLocal() as db:
+        q = db.query(AuditLog).order_by(AuditLog.id.desc())
+        if not include_lab:
+            lab_names = [
+                row[0] for row in db.query(Target.name).filter(Target.is_lab.is_(True)).all()
+            ]
+            if lab_names:
+                q = q.filter(AuditLog.target.notin_(lab_names))
         return [
             {
                 "id": x.id,
@@ -321,7 +371,7 @@ def audit_logs():
                 "details": x.details,
                 "created_at": x.created_at.isoformat(),
             }
-            for x in db.query(AuditLog).order_by(AuditLog.id.desc()).limit(200)
+            for x in q.limit(200)
         ]
 
 

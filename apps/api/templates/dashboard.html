@@ -40,6 +40,11 @@ a{color:var(--acc)}
 <div class="card"><div>Critical</div><div class="num" id="s-critical">–</div></div>
 </div>
 
+<div class="row" style="margin-top:14px">
+<label style="cursor:pointer;display:flex;gap:6px;align-items:center"><input type="checkbox" id="lab-toggle" onchange="onLabToggle()" style="width:16px;height:16px"> Include lab data</label>
+<span class="mut">Lab targets (e.g. <code>local-lab</code>) are hidden by default, so your own scans stay front and center. Tick to bring them back.</span>
+</div>
+
 <section>
 <h2>Targets</h2>
 <div class="row">
@@ -47,10 +52,11 @@ a{color:var(--acc)}
 <div class="field"><label>URL (http/https)</label><input id="t-url" size="26" placeholder="http://127.0.0.1:8080"></div>
 <div class="field"><label>or IP</label><input id="t-ip" size="14" placeholder="127.0.0.1"></div>
 <div class="field"><label>Authorized</label><input type="checkbox" id="t-auth" checked style="width:18px;height:18px"></div>
+<div class="field"><label>Lab target</label><input type="checkbox" id="t-lab" style="width:18px;height:18px" title="Lab targets are hidden by default"></div>
 <button class="btn primary" onclick="addTarget()">Add target</button>
 </div>
 <div class="ok-msg" id="t-msg"></div>
-<table><thead><tr><th>ID</th><th>Name</th><th>Auth</th><th>URL / IP</th><th>Scope (host:port)</th></tr></thead><tbody id="targets"></tbody></table>
+<table><thead><tr><th>ID</th><th>Name</th><th>Auth</th><th>URL / IP</th><th>Scope (host:port)</th><th>Lab</th></tr></thead><tbody id="targets"></tbody></table>
 <div class="row" style="margin-top:12px">
 <div class="field"><label>Target</label><select id="sc-target" style="min-width:130px"></select></div>
 <div class="field"><label>Host</label><input id="sc-host" size="16" placeholder="127.0.0.1"></div>
@@ -105,11 +111,32 @@ async function api(path, options) {
   return res.json();
 }
 
+// Lab data visibility: lab targets (e.g. local-lab) are hidden by default so
+// your own scans stay front and center; the choice is remembered per browser.
+function labOn() { return localStorage.getItem("sentinelsec_show_lab") === "1"; }
+function withLab(path, params) {
+  const p = new URLSearchParams(params || {});
+  if (labOn()) p.set("include_lab", "true");
+  const q = p.toString();
+  return q ? `${path}?${q}` : path;
+}
+function onLabToggle() {
+  localStorage.setItem("sentinelsec_show_lab", $("lab-toggle").checked ? "1" : "0");
+  refreshAll();
+}
+async function setLab(id, isLab) {
+  try {
+    await api(`/targets/${id}/lab`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_lab: isLab }) });
+    await loadTargets();
+  } catch (e) { console.error(e); }
+}
+$("lab-toggle").checked = labOn();
+
 async function loadStats() {
   try {
-    const targets = await api("/targets");
-    const assess = await api("/assessments");
-    const findings = await api("/findings");
+    const targets = await api(withLab("/targets"));
+    const assess = await api(withLab("/assessments"));
+    const findings = await api(withLab("/findings"));
     $("s-targets").textContent = targets.length;
     $("s-assess").textContent = assess.length;
     $("s-findings").textContent = findings.length;
@@ -125,16 +152,17 @@ function targetOptions(selectEl, targets) {
 
 async function loadTargets() {
   try {
-    const targets = await api("/targets");
+    const targets = await api(withLab("/targets"));
     targetOptions($("sc-target"), targets);
     targetOptions($("a-target"), targets);
     $("targets").innerHTML = targets.map(t => `<tr>
-      <td>${t.id}</td><td>${esc(t.name)}</td>
+      <td>${t.id}</td><td>${esc(t.name)}${t.is_lab ? ' <span class="chip">LAB</span>' : ""}</td>
       <td>${t.authorized ? "✅" : "—"}</td>
       <td>${esc(t.url || t.ip || "")}</td>
       <td>${(t.scope || []).map(s => `<span class="chip">${esc(s.host)}:${s.port ?? "*"}${s.excluded ? " (excluded)" : ""}</span>`).join("") || '<span class="mut">none</span>'}</td>
+      <td><button class="btn small" onclick="setLab(${t.id}, ${!t.is_lab})">${t.is_lab ? "Unmark lab" : "Mark lab"}</button></td>
     </tr>`).join("");
-  } catch (e) { $("targets").innerHTML = `<tr><td colspan="5" class="err">${esc(e.message)}</td></tr>`; }
+  } catch (e) { $("targets").innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`; }
 }
 
 async function addTarget() {
@@ -145,12 +173,13 @@ async function addTarget() {
   try {
     if (!name) throw new Error("Name is required.");
     if (!url && !ip) throw new Error("Provide a URL or an IP.");
-    const body = { name, authorized: $("t-auth").checked };
+    const body = { name, authorized: $("t-auth").checked, is_lab: $("t-lab").checked };
     if (url) body.url = url;
     if (ip) body.ip = ip;
     await api("/targets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     msg.textContent = `Target "${name}" created.`;
     $("t-name").value = $("t-url").value = $("t-ip").value = "";
+    $("t-lab").checked = false;
     await loadTargets();
   } catch (e) { msg.textContent = "Error: " + e.message; }
 }
@@ -174,7 +203,7 @@ async function addScope() {
 }
 async function loadAssessments() {
   try {
-    const [assess, targets] = await Promise.all([api("/assessments"), api("/targets")]);
+    const [assess, targets] = await Promise.all([api(withLab("/assessments")), api(withLab("/targets"))]);
     const names = Object.fromEntries(targets.map(t => [t.id, t.name]));
     $("assess").innerHTML = assess.map(a => {
       const canStart = !["RUNNING", "COMPLETED"].includes(a.status);
@@ -238,7 +267,7 @@ function openReport(id) { window.open(`/reports/view?assessment_id=${id}&fmt=htm
 async function loadFindings(manual) {
   try {
     const filter = $("f-filter").value;
-    const findings = await api("/findings" + (filter ? `?assessment_id=${filter}` : ""));
+    const findings = await api(withLab("/findings", filter ? { assessment_id: filter } : null));
     $("findings").innerHTML = findings.map(f => `<tr style="cursor:pointer" onclick="showFinding(${f.id})">
       <td>${f.id}</td>
       <td><span class="sev ${esc(f.severity)}">${esc(f.severity)}</span></td>
@@ -258,7 +287,7 @@ async function showFinding(id) {
 
 async function loadAudit() {
   try {
-    const logs = await api("/audit-logs");
+    const logs = await api(withLab("/audit-logs"));
     $("audit").innerHTML = logs.slice(0, 10).map(l => `<tr>
       <td class="mut">${esc((l.created_at || "").replace("T", " ").slice(0, 19))}</td>
       <td>${esc(l.action)}</td><td>${esc(l.target ?? "—")}</td>

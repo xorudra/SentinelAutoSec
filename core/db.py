@@ -36,8 +36,10 @@ def migrate_schema() -> None:
     inspector = inspect(engine)
 
     findings_columns = {column["name"] for column in inspector.get_columns("findings")}
+    targets_columns = {column["name"] for column in inspector.get_columns("targets")}
 
     statements = []
+    added_lab_column = False
 
     if "asset_id" not in findings_columns:
         statements.append("ALTER TABLE findings ADD COLUMN asset_id INTEGER REFERENCES assets(id)")
@@ -47,9 +49,22 @@ def migrate_schema() -> None:
             "ALTER TABLE findings ADD COLUMN service_id INTEGER REFERENCES services(id)"
         )
 
+    if "is_lab" not in targets_columns:
+        statements.append("ALTER TABLE targets ADD COLUMN is_lab BOOLEAN NOT NULL DEFAULT 0")
+        added_lab_column = True
+
     if not statements:
         return
 
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
+
+        if added_lab_column:
+            # One-time tagging on the very first migration that adds the
+            # column: the documented local lab target ("local-lab") is
+            # marked as lab data so the dashboard hides it by default.
+            # Users can change this later from the dashboard.
+            connection.execute(
+                text("UPDATE targets SET is_lab = 1 WHERE lower(name) = 'local-lab'")
+            )

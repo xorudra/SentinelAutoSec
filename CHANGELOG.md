@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- **Lab data hidden by default.** Targets flagged as lab (e.g. the bundled `local-lab` demo target) are hidden from the dashboard — targets, assessments, findings, activity and the stat cards show your own scans only. A new "Include lab data" switch brings them back, and the choice is remembered per browser.
+- Added `is_lab` flag on targets: a "Lab target" checkbox when creating a target, a per-target "Mark lab / Unmark lab" action, and `POST /targets/{id}/lab` on the API.
+- Existing databases are migrated automatically and the existing `local-lab` target is tagged as lab data on first start.
+
 ## 1.1.0
 - **GUI-only edition.** The command-line interface (`apps.cli`, the `sentinelsec` entry point and the `typer`/`rich` dependencies) has been removed; every workflow is available from the web dashboard.
 - Added `python setup_environment.py` — one command to create the virtual environment, install dependencies and initialize the database.
