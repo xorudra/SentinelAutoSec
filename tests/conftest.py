@@ -14,9 +14,9 @@ os.environ["SENTINELSEC_REPORTS"] = _TEST_REPORTS
 if os.path.exists(_TEST_DB):
     os.remove(_TEST_DB)
 
-import pytest  # noqa: E402
+import pytest
 
-from core.db import init_db  # noqa: E402
+from core.db import init_db
 
 
 @pytest.fixture(autouse=True)
