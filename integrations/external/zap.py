@@ -1,7 +1,7 @@
 import os
-import shutil
 import subprocess
 
+from integrations.external.locate import locate
 from security.scope_guard import ensure_explicit_http_target
 
 
@@ -19,7 +19,7 @@ def available() -> bool:
 
 def _zap_command() -> str | None:
     for name in _ZAP_COMMANDS:
-        found = shutil.which(name)
+        found = locate(name)
         if found:
             return found
     return None

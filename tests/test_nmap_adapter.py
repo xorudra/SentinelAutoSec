@@ -35,7 +35,7 @@ def test_scan_with_explicit_ports_single_pass(monkeypatch):
 
     assert len(calls) == 1
     assert "-p" in calls[0] and calls[0][calls[0].index("-p") + 1] == "80,443"
-    assert calls[0][0] == "nmap"
+    assert calls[0][0].lower().endswith(("nmap", "nmap.exe"))
     assert [r["port"] for r in results] == [80, 443]
     assert results[0]["name"] == "http"
 
@@ -92,4 +92,6 @@ def test_parse_xml_ignores_closed_ports():
 
 def test_port_arg_joins_ports():
     assert adapter._port_arg([80, 443]) == "80,443"
+
+
 

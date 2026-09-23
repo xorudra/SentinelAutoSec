@@ -1,6 +1,6 @@
-import shutil
 import subprocess
 
+from integrations.external.locate import locate
 from security.scope_guard import ensure_explicit_http_target
 
 
@@ -9,16 +9,17 @@ class NucleiUnavailable(RuntimeError):
 
 
 def available() -> bool:
-    return shutil.which("nuclei") is not None
+    return locate("nuclei") is not None
 
 
 def baseline(url: str, timeout: int = 120) -> dict:
     ensure_explicit_http_target(url)
-    if not available():
+    command = locate("nuclei")
+    if not command:
         raise NucleiUnavailable("Nuclei is not installed.")
     proc = subprocess.run(
         [
-            "nuclei",
+            command,
             "-u",
             url,
             "-tags",

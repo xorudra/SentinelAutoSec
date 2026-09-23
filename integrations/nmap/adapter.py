@@ -1,8 +1,8 @@
-import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 
 from core.config import settings
+from integrations.external.locate import locate
 
 
 class NmapUnavailable(RuntimeError):
@@ -10,7 +10,11 @@ class NmapUnavailable(RuntimeError):
 
 
 def available() -> bool:
-    return shutil.which("nmap") is not None
+    return locate("nmap") is not None
+
+
+def _nmap_command() -> str:
+    return locate("nmap") or "nmap"
 
 
 def _timeout() -> int:
@@ -23,7 +27,7 @@ def _port_arg(ports: list[int]) -> str:
 
 def _run_nmap(host: str, args: list[str], timeout: int) -> list[dict]:
     proc = subprocess.run(
-        ["nmap", *args, host],
+        [_nmap_command(), *args, host],
         check=False,
         capture_output=True,
         text=True,

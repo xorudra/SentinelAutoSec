@@ -8,6 +8,7 @@ Usage:
     python launch_dashboard.py
 """
 
+import os
 import socket
 import subprocess
 import sys
@@ -18,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 VENV_DIR = ROOT / ".venv"
+TOOLS_BIN = ROOT / "tools" / "bin"
 
 
 def venv_python() -> Path:
@@ -56,6 +58,12 @@ def main() -> int:
     print(f"==> Dashboard URL : {url}")
     print("==> Stop with Ctrl+C")
 
+    # Make project-local tools (downloaded by setup_optional_tools.py) visible
+    # to the server process without requiring any manual PATH editing.
+    env = os.environ.copy()
+    if TOOLS_BIN.is_dir():
+        env["PATH"] = f"{TOOLS_BIN}{os.pathsep}{env.get('PATH', '')}"
+
     process = subprocess.Popen(
         [
             str(python),
@@ -68,6 +76,7 @@ def main() -> int:
             str(port),
         ],
         cwd=str(ROOT),
+        env=env,
     )
 
     # Give the server a moment, then open the browser automatically.

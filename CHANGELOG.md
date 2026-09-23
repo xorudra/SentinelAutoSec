@@ -1,7 +1,12 @@
 # Changelog
 
 ## Unreleased
-- **Lab data hidden by default.** Targets flagged as lab (e.g. the bundled `local-lab` demo target) are hidden from the dashboard — targets, assessments, findings, activity and the stat cards show your own scans only. A new "Include lab data" switch brings them back, and the choice is remembered per browser.
+- **Zero-friction external tools.** Added `integrations/external/locate.py`: tool lookup now checks `PATH` first, then common install locations (scoop shims, `go/bin`, Chocolatey, `Program Files` for Nmap/ZAP) and the project-local `tools\bin` folder — installed-but-"not installed" chip confusion is gone, and tools never need manual PATH editing.
+- Added `python setup_optional_tools.py` — one command to install the optional external tools: auto-downloads the portable Nuclei binary into `tools\bin`, and fetches + launches the official Nmap / OWASP ZAP installers. `--list` shows the current status, already-installed tools are skipped.
+- `setup_environment.py` now auto-downloads Nuclei (non-fatally) during setup, so the EXTENDED profile works without any manual install.
+- `launch_dashboard.py` puts `tools\bin` on the server process `PATH` automatically.
+- The `/tools` API endpoint now reports the resolved executable path for each tool, and the dashboard chips show it in their tooltip.
+- Lab data hidden by default. Targets flagged as lab (e.g. the bundled `local-lab` demo target) are hidden from the dashboard — targets, assessments, findings, activity and the stat cards show your own scans only. A new "Include lab data" switch brings them back, and the choice is remembered per browser.
 - Added `is_lab` flag on targets: a "Lab target" checkbox when creating a target, a per-target "Mark lab / Unmark lab" action, and `POST /targets/{id}/lab` on the API.
 - Existing databases are migrated automatically and the existing `local-lab` target is tagged as lab data on first start.
 

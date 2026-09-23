@@ -97,15 +97,28 @@ All settings are environment variables (see `.env.example`):
 - `SAFE`: core passive web/TLS checks plus optional Nmap discovery for explicitly scoped IP targets.
 - `EXTENDED`: `SAFE` plus optional Nuclei misconfiguration/exposure and OWASP ZAP baseline adapters. If a tool is not installed, the stage is recorded as skipped rather than failing the assessment.
 
-### Installing the optional tools (Windows)
+### Installing the optional tools
 
-The dashboard chips show `available` / `not installed` by checking whether each tool is on your `PATH`. The optional tools are external programs, not pip packages:
+You normally do **not** have to install anything by hand. The setup step already auto-downloads the portable **Nuclei** binary into `tools\bin`, and one command installs the rest:
 
-| Tool | Install | Verify |
+```bash
+python setup_optional_tools.py
+```
+
+This script:
+
+- **Nuclei** — downloads the portable Windows binary from the official projectdiscovery releases into `tools\bin` (no admin rights, no PATH changes, no package manager).
+- **Nmap** — downloads the official installer and launches it for you (its Npcap driver needs admin rights, so it cannot be portable).
+- **OWASP ZAP** — downloads the official Windows installer and launches it (pass `--zap-silent` for an unattended install).
+- Already-installed tools are detected and skipped (`--list` shows the current status without downloading anything).
+
+The dashboard finds tools in `tools\bin` and in their usual install locations automatically (`integrations/external/locate.py`), so nothing ever has to go on your `PATH` — just restart the dashboard after installing. Manual alternatives:
+
+| Tool | Manual install | Verify |
 |---|---|---|
-| **Nmap** | https://nmap.org/download.html (the installer adds it to PATH) | `nmap --version` |
-| **Nuclei** | `scoop install nuclei` · `choco install nuclei` · or download `nuclei-windows-amd64.exe` from https://github.com/projectdiscovery/nuclei/releases, rename to `nuclei.exe` and place it in a folder on `PATH` | `nuclei -version` |
-| **OWASP ZAP** | https://www.zaproxy.org/download/ (Windows installer) — then add the install folder (contains `zap.bat`) to `PATH` | `zap.bat -version` |
+| **Nmap** | https://nmap.org/download.html | `nmap --version` |
+| **Nuclei** | `scoop install nuclei` · `choco install nuclei` · portable exe from https://github.com/projectdiscovery/nuclei/releases | `nuclei -version` |
+| **OWASP ZAP** | https://www.zaproxy.org/download/ (Windows installer) | `zap.bat -version` |
 
 After installing, restart the dashboard (`python launch_dashboard.py`) so the availability chips refresh. On Linux/macOS the ZAP wrapper `zap-baseline.py`/`zap.sh` is detected instead.
 
@@ -123,7 +136,7 @@ Any future AI component should analyze normalized evidence only. It must not aut
 ## Development
 
 ```bash
-pytest -q        # 52 unit tests
+pytest -q        # 75 unit tests
 ruff check .     # lint
 mypy .           # type check
 python -m compileall -q .

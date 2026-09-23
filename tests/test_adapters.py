@@ -21,24 +21,20 @@ def test_external_guard_rejects_non_http():
 def test_zap_available_detects_windows_install(monkeypatch):
     # Windows ZAP installs provide zap.bat / ZAP.exe rather than zap.sh.
     monkeypatch.setattr(
-        zap.shutil,
-        "which",
-        lambda name: r"C:\Program Files\OWASP ZAP\zap.bat" if name == "zap.bat" else None,
+        zap, "locate", lambda name: r"C:\Program Files\OWASP ZAP\zap.bat" if name == "zap.bat" else None
     )
     assert zap.available() is True
     assert zap._zap_command() == r"C:\Program Files\OWASP ZAP\zap.bat"
 
 
 def test_zap_unavailable_when_no_command_found(monkeypatch):
-    monkeypatch.setattr(zap.shutil, "which", lambda name: None)
+    monkeypatch.setattr(zap, "locate", lambda name: None)
     assert zap.available() is False
 
 
 def test_zap_prefers_baseline_wrapper(monkeypatch):
     monkeypatch.setattr(
-        zap.shutil,
-        "which",
-        lambda name: "/usr/bin/zap-baseline.py" if name == "zap-baseline.py" else None,
+        zap, "locate", lambda name: "/usr/bin/zap-baseline.py" if name == "zap-baseline.py" else None
     )
     assert zap._zap_command() == "/usr/bin/zap-baseline.py"
 
@@ -56,9 +52,7 @@ def test_zap_baseline_uses_cmd_flags_for_windows_zap(monkeypatch):
         return _Proc()
 
     monkeypatch.setattr(
-        zap.shutil,
-        "which",
-        lambda name: r"C:\Program Files\OWASP ZAP\zap.bat" if name == "zap.bat" else None,
+        zap, "locate", lambda name: r"C:\Program Files\OWASP ZAP\zap.bat" if name == "zap.bat" else None
     )
     monkeypatch.setattr(zap.subprocess, "run", fake_run)
     result = zap.baseline("http://127.0.0.1:8080", timeout=5)

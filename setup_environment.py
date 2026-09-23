@@ -59,6 +59,17 @@ def main() -> int:
         ]
     )
 
+    # Optional: fetch the portable Nuclei binary into tools\bin so the EXTENDED
+    # profile works without any manual install. Never fails the setup.
+    try:
+        print("==> Checking optional security tools (Nuclei/Nmap/ZAP) ...")
+        run([python, "setup_optional_tools.py", "--nuclei-only", "--skip-zap"])
+        print("    Tip: run 'python setup_optional_tools.py' any time to install the")
+        print("    optional Nmap/OWASP ZAP helpers (EXTENDED profile only; SAFE scans")
+        print("    never need them).")
+    except Exception:  # noqa: BLE001 - offline machines must still finish setup
+        print("    Skipped (offline or download failed) - the dashboard works without it.")
+
     print()
     print("=" * 60)
     print("Setup complete.")

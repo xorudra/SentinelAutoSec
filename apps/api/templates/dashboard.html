@@ -298,13 +298,16 @@ async function loadAudit() {
 async function loadTools() {
   try {
     const t = await api("/tools");
+    const paths = { nmap: t.nmap_path, nuclei: t.nuclei_path, zap_baseline: t.zap_path };
     const meta = {
-      nmap: { label: "Nmap", hint: "Required for port discovery. Install from nmap.org and make sure 'nmap' is on PATH." },
-      nuclei: { label: "Nuclei", hint: "Optional (EXTENDED profile). Install: 'scoop install nuclei', 'choco install nuclei', or download nuclei-windows-amd64.exe from github.com/projectdiscovery/nuclei/releases, rename to nuclei.exe and put it on PATH." },
-      zap_baseline: { label: "OWASP ZAP", hint: "Optional (EXTENDED profile). Install from zaproxy.org and add its install folder (contains zap.bat on Windows) to PATH." },
+      nmap: { label: "Nmap", hint: "Required for port discovery. Install: python setup_optional_tools.py, or from nmap.org." },
+      nuclei: { label: "Nuclei", hint: "Optional (EXTENDED profile). Install: python setup_optional_tools.py (auto-downloads it), or 'scoop install nuclei'." },
+      zap_baseline: { label: "OWASP ZAP", hint: "Optional (EXTENDED profile). Install: python setup_optional_tools.py, or from zaproxy.org." },
     };
-    $("tools").innerHTML = ["nmap", "nuclei", "zap_baseline"].map(k =>
-      `<span class="chip" title="${meta[k].hint}">${meta[k].label}: ${t[k] ? "available" : "not installed"}</span>`).join("");
+    $("tools").innerHTML = ["nmap", "nuclei", "zap_baseline"].map(k => {
+      const found = paths[k] ? `\\nFound at: ${paths[k]}` : "\\nNot found on PATH or in common install locations.\\nFix: run  python setup_optional_tools.py";
+      return `<span class="chip" title="${meta[k].hint}${found}">${meta[k].label}: ${t[k] ? "available" : "not installed"}</span>`;
+    }).join("");
   } catch (e) { console.error(e); }
 }
 

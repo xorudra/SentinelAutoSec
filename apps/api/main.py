@@ -22,7 +22,9 @@ from database.models import (
     Target,
     TargetScope,
 )
+from integrations.external.locate import locate
 from integrations.external.nuclei import available as nuclei_available
+from integrations.external.zap import _zap_command as zap_command
 from integrations.external.zap import available as zap_available
 from integrations.nmap.adapter import available as nmap_available
 from reporting.generator import build_report
@@ -93,7 +95,17 @@ def health():
 
 @app.get("/tools", dependencies=[Depends(auth)])
 def tools():
-    return {"nmap": nmap_available(), "nuclei": nuclei_available(), "zap_baseline": zap_available()}
+    nmap_path = locate("nmap")
+    nuclei_path = locate("nuclei")
+    zap_path = zap_command()
+    return {
+        "nmap": nmap_available(),
+        "nuclei": nuclei_available(),
+        "zap_baseline": zap_available(),
+        "nmap_path": nmap_path,
+        "nuclei_path": nuclei_path,
+        "zap_path": zap_path,
+    }
 
 
 @app.post("/targets", dependencies=[Depends(auth)])
