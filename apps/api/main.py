@@ -1,5 +1,9 @@
-from contextlib import asynccontextmanager
+import io
+import re
+import threading
+from contextlib import asynccontextmanager, redirect_stdout
 from pathlib import Path
+from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -83,6 +87,10 @@ class AssessmentCreate(BaseModel):
     profile: str = Field(default="SAFE", pattern="^(SAFE|EXTENDED)$")
 
 
+class ToolInstallRequest(BaseModel):
+    tool: str = Field(pattern="^(nuclei|nmap|zap)$")
+
+
 def auth(x_api_key: str | None = Header(default=None)):
     if settings.api_key and x_api_key != settings.api_key:
         raise HTTPException(401, "Invalid API key")
@@ -106,6 +114,82 @@ def tools():
         "nuclei_path": nuclei_path,
         "zap_path": zap_path,
     }
+
+
+# --- One-click optional tool installation (wraps setup_optional_tools.py) ---
+_install_lock = threading.Lock()
+_install_state: dict[str, Any] = {
+    "running": False,
+    "tool": None,
+    "log": [],
+    "error": None,
+    "finished": False,
+}
+
+
+class _LogCapture(io.TextIOBase):
+    """Capture installer stdout into the shared log list, line by line."""
+
+    def __init__(self, sink: list[str]) -> None:
+        self._sink = sink
+        self._pending = ""
+
+    def write(self, text: str) -> int:
+        self._pending += text
+        parts = re.split(r"[\r\n]", self._pending)
+        # Whatever follows the last separator may be an incomplete line.
+        self._pending = parts.pop()
+        for raw in parts:
+            line = raw.strip()
+            if line:
+                self._sink.append(line)
+        if len(self._sink) > 300:
+            del self._sink[:-120]
+        return len(text)
+
+
+def _run_tool_install(tool: str) -> None:
+    """Execute the installer for `tool` in a worker thread; never raises."""
+    import setup_optional_tools as installer
+
+    function = {
+        "nuclei": installer.install_nuclei,
+        "nmap": installer.install_nmap,
+        "zap": installer.install_zap,
+    }[tool]
+    try:
+        with redirect_stdout(_LogCapture(_install_state["log"])):
+            function()
+    except Exception as exc:  # noqa: BLE001 - the error is surfaced in the dashboard
+        _install_state["error"] = f"{type(exc).__name__}: {exc}"
+    finally:
+        _install_state["running"] = False
+        _install_state["finished"] = True
+
+
+@app.post("/tools/install", dependencies=[Depends(auth)])
+def install_tool(data: ToolInstallRequest):
+    with _install_lock:
+        if _install_state["running"]:
+            raise HTTPException(409, "An installation is already in progress.")
+        _install_state.update(
+            {"running": True, "tool": data.tool, "log": [], "error": None, "finished": False}
+        )
+        thread = threading.Thread(target=_run_tool_install, args=(data.tool,), daemon=True)
+    thread.start()
+    return {"started": True, "tool": data.tool}
+
+
+@app.get("/tools/install/status", dependencies=[Depends(auth)])
+def install_status():
+    with _install_lock:
+        return {
+            "running": _install_state["running"],
+            "tool": _install_state["tool"],
+            "finished": _install_state["finished"],
+            "error": _install_state["error"],
+            "log": list(_install_state["log"]),
+        }
 
 
 @app.post("/targets", dependencies=[Depends(auth)])

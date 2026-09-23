@@ -27,12 +27,14 @@ button{cursor:pointer}button:hover{border-color:var(--acc)}button:disabled{opaci
 .err{color:var(--bad);font-size:12.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ok-msg{color:var(--ok);font-size:13px;min-height:18px}
 #detail{margin-top:12px;background:#0d1428;border:1px solid var(--line);border-radius:10px;padding:14px;white-space:pre-wrap;font-size:13.5px;display:none}
+#install-panel{display:none;margin-top:10px;background:#0d1428;border:1px solid var(--line);border-radius:10px;padding:12px;white-space:pre-wrap;font-size:12.5px;max-height:190px;overflow:auto;font-family:ui-monospace,Consolas,monospace}
 a{color:var(--acc)}
 @media(max-width:760px){.grid{grid-template-columns:1fr 1fr}}
 </style></head>
 <body><main>
 <h1>SentinelAutoSec</h1>
 <p class="mut">Authorized security assessment dashboard · local-first · <span id="tools"></span></p>
+<div id="install-panel"></div>
 <div class="grid">
 <div class="card"><div>Targets</div><div class="num" id="s-targets">–</div></div>
 <div class="card"><div>Assessments</div><div class="num" id="s-assess">–</div></div>
@@ -295,19 +297,55 @@ async function loadAudit() {
   } catch (e) { console.error(e); }
 }
 
+let installTimer = null;
+
 async function loadTools() {
   try {
     const t = await api("/tools");
     const paths = { nmap: t.nmap_path, nuclei: t.nuclei_path, zap_baseline: t.zap_path };
     const meta = {
-      nmap: { label: "Nmap", hint: "Required for port discovery. Install: python setup_optional_tools.py, or from nmap.org." },
-      nuclei: { label: "Nuclei", hint: "Optional (EXTENDED profile). Install: python setup_optional_tools.py (auto-downloads it), or 'scoop install nuclei'." },
-      zap_baseline: { label: "OWASP ZAP", hint: "Optional (EXTENDED profile). Install: python setup_optional_tools.py, or from zaproxy.org." },
+      nmap: { label: "Nmap", key: "nmap", hint: "Required for port discovery.", install: "Downloads the official Nmap installer and launches it (confirm the Windows prompt)." },
+      nuclei: { label: "Nuclei", key: "nuclei", hint: "Optional (EXTENDED profile).", install: "Downloads the portable Nuclei binary into tools\\bin — no admin rights needed." },
+      zap_baseline: { label: "OWASP ZAP", key: "zap", hint: "Optional (EXTENDED profile).", install: "Downloads the official OWASP ZAP installer and launches it (confirm the Windows prompt)." },
     };
     $("tools").innerHTML = ["nmap", "nuclei", "zap_baseline"].map(k => {
-      const found = paths[k] ? `\\nFound at: ${paths[k]}` : "\\nNot found on PATH or in common install locations.\\nFix: run  python setup_optional_tools.py";
-      return `<span class="chip" title="${meta[k].hint}${found}">${meta[k].label}: ${t[k] ? "available" : "not installed"}</span>`;
+      const m = meta[k];
+      const found = paths[k] ? `\nFound at: ${paths[k]}` : `\nNot found. Click Install, or run  python setup_optional_tools.py`;
+      const chip = `<span class="chip" title="${m.hint}${found}">${m.label}: ${t[k] ? "available" : "not installed"}</span>`;
+      const btn = t[k] ? "" : ` <button class="btn small" title="${esc(m.install)}" onclick="installTool('${m.key}')">Install</button>`;
+      return chip + btn;
     }).join("");
+  } catch (e) { console.error(e); }
+}
+
+async function installTool(tool) {
+  const panel = $("install-panel");
+  try {
+    await api("/tools/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tool }) });
+    panel.style.display = "block";
+    panel.textContent = "Starting installer…";
+    clearInterval(installTimer);
+    installTimer = setInterval(pollInstall, 1200);
+  } catch (e) {
+    panel.style.display = "block";
+    panel.textContent = "Error: " + e.message;
+  }
+}
+
+async function pollInstall() {
+  try {
+    const s = await api("/tools/install/status");
+    const panel = $("install-panel");
+    if (s.log.length) panel.textContent = s.log.slice(-12).join("\n");
+    if (!s.running) {
+      clearInterval(installTimer);
+      if (s.error) panel.textContent += "\nFAILED: " + s.error;
+      else {
+        panel.textContent += "\nDone — refreshing tool status.";
+        await loadTools();
+      }
+      setTimeout(() => { panel.style.display = "none"; }, 8000);
+    }
   } catch (e) { console.error(e); }
 }
 

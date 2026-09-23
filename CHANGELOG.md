@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- **One-click tool installation from the dashboard.** Tool chips that read "not installed" now have an **Install** button. It starts the auto-downloader (`setup_optional_tools.py`) from the GUI via the new `POST /tools/install` + `GET /tools/install/status` API endpoints and shows the installer log live; Nuclei installs silently into `tools\bin`, Nmap/ZAP launch their official installers. Guarded against concurrent installs (409) and API-key protected.
 - **Zero-friction external tools.** Added `integrations/external/locate.py`: tool lookup now checks `PATH` first, then common install locations (scoop shims, `go/bin`, Chocolatey, `Program Files` for Nmap/ZAP) and the project-local `tools\bin` folder — installed-but-"not installed" chip confusion is gone, and tools never need manual PATH editing.
 - Added `python setup_optional_tools.py` — one command to install the optional external tools: auto-downloads the portable Nuclei binary into `tools\bin`, and fetches + launches the official Nmap / OWASP ZAP installers. `--list` shows the current status, already-installed tools are skipped.
 - `setup_environment.py` now auto-downloads Nuclei (non-fatally) during setup, so the EXTENDED profile works without any manual install.

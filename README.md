@@ -105,6 +105,8 @@ You normally do **not** have to install anything by hand. The setup step already
 python setup_optional_tools.py
 ```
 
+You can also install directly from the dashboard: every tool chip that reads **not installed** gets an **Install** button next to it. Clicking it starts the same auto-downloader from the GUI and shows the installer log live; the chip flips to **available** when the tool is ready (Nmap/ZAP pop up their official installer window — confirm the Windows prompt).
+
 This script:
 
 - **Nuclei** — downloads the portable Windows binary from the official projectdiscovery releases into `tools\bin` (no admin rights, no PATH changes, no package manager).

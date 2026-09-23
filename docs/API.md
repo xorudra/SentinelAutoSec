@@ -12,6 +12,8 @@ Core routes:
 
 - `GET /health`
 - `GET /tools`
+- `POST /tools/install` — start the one-click installer for a tool (`{"tool": "nuclei" | "nmap" | "zap"}`); returns 409 if an install is already running
+- `GET /tools/install/status` — polling endpoint for the running install (`running`, `tool`, `finished`, `error`, `log`)
 - `POST /targets`
 - `GET /targets`
 - `POST /targets/{id}/scope`
