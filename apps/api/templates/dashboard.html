@@ -298,7 +298,13 @@ async function loadAudit() {
 async function loadTools() {
   try {
     const t = await api("/tools");
-    $("tools").innerHTML = ["nmap", "nuclei", "zap_baseline"].map(k => `<span class="chip">${k}: ${t[k] ? "available" : "not installed"}</span>`).join("");
+    const meta = {
+      nmap: { label: "Nmap", hint: "Required for port discovery. Install from nmap.org and make sure 'nmap' is on PATH." },
+      nuclei: { label: "Nuclei", hint: "Optional (EXTENDED profile). Install: 'scoop install nuclei', 'choco install nuclei', or download nuclei-windows-amd64.exe from github.com/projectdiscovery/nuclei/releases, rename to nuclei.exe and put it on PATH." },
+      zap_baseline: { label: "OWASP ZAP", hint: "Optional (EXTENDED profile). Install from zaproxy.org and add its install folder (contains zap.bat on Windows) to PATH." },
+    };
+    $("tools").innerHTML = ["nmap", "nuclei", "zap_baseline"].map(k =>
+      `<span class="chip" title="${meta[k].hint}">${meta[k].label}: ${t[k] ? "available" : "not installed"}</span>`).join("");
   } catch (e) { console.error(e); }
 }
 

@@ -97,6 +97,19 @@ All settings are environment variables (see `.env.example`):
 - `SAFE`: core passive web/TLS checks plus optional Nmap discovery for explicitly scoped IP targets.
 - `EXTENDED`: `SAFE` plus optional Nuclei misconfiguration/exposure and OWASP ZAP baseline adapters. If a tool is not installed, the stage is recorded as skipped rather than failing the assessment.
 
+### Installing the optional tools (Windows)
+
+The dashboard chips show `available` / `not installed` by checking whether each tool is on your `PATH`. The optional tools are external programs, not pip packages:
+
+| Tool | Install | Verify |
+|---|---|---|
+| **Nmap** | https://nmap.org/download.html (the installer adds it to PATH) | `nmap --version` |
+| **Nuclei** | `scoop install nuclei` · `choco install nuclei` · or download `nuclei-windows-amd64.exe` from https://github.com/projectdiscovery/nuclei/releases, rename to `nuclei.exe` and place it in a folder on `PATH` | `nuclei -version` |
+| **OWASP ZAP** | https://www.zaproxy.org/download/ (Windows installer) — then add the install folder (contains `zap.bat`) to `PATH` | `zap.bat -version` |
+
+After installing, restart the dashboard (`python launch_dashboard.py`) so the availability chips refresh. On Linux/macOS the ZAP wrapper `zap-baseline.py`/`zap.sh` is detected instead.
+
+
 ## Checkpoint and resume
 
 Each stage records completed modules, pending modules and structured state in SQLite. If execution stops, click **Resume** on the assessment in the dashboard (or `POST /assessments/{id}/resume`) to continue from the latest checkpoint. Finding fingerprints and idempotent asset/service writes prevent duplicate records on recovery.
