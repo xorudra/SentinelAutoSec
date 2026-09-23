@@ -8,3 +8,4 @@ sentinelsec.db
 reports/generated/
 .env
 sentinelautosec.egg-info/
+sentinelsec.db.backup-*

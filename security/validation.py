@@ -29,8 +29,14 @@ def validate_url(url: str) -> str:
     return url
 
 
-def in_scope(host: str, port: int | None, allowed_hosts: set[str], allowed_ports: set[int]) -> bool:
+def in_scope(
+    host: str,
+    port: int | None,
+    allowed_hosts: set[str],
+    allowed_ports: set[int],
+    allow_all_ports: bool = False,
+) -> bool:
     normalized = host.lower()
     host_ok = normalized in {h.lower() for h in allowed_hosts}
-    port_ok = port is None or port in allowed_ports
+    port_ok = allow_all_ports or port is None or port in allowed_ports
     return host_ok and port_ok

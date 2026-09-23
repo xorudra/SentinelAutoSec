@@ -17,6 +17,8 @@ class Settings:
 
     job_stale_seconds: float = float(os.getenv("SENTINELSEC_JOB_STALE", "120"))
 
+    nmap_timeout: float = float(os.getenv("SENTINELSEC_NMAP_TIMEOUT", "900"))
+
 
 settings = Settings()
 settings.reports_dir.mkdir(parents=True, exist_ok=True)

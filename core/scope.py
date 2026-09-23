@@ -19,9 +19,16 @@ def validate_request(target: Target, host: str, port: int | None) -> None:
     allowed_hosts = {s.host for s in target.scopes if not s.excluded}
     allowed_ports = {s.port for s in target.scopes if not s.excluded and s.port is not None}
     excluded_hosts = {s.host for s in target.scopes if s.excluded}
+    # A non-excluded scope entry without a port grants access to every port
+    # on that host (i.e. "scan all ports" mode).
+    allow_all_ports = any(
+        s.host.lower() == host.lower() and s.port is None
+        for s in target.scopes
+        if not s.excluded
+    )
     if host.lower() in {h.lower() for h in excluded_hosts}:
         raise ScopeError(f"Blocked by scope exclusion: {host}:{port or '*'}")
-    if not in_scope(host, port, allowed_hosts, allowed_ports):
+    if not in_scope(host, port, allowed_hosts, allowed_ports, allow_all_ports):
         raise ScopeError(f"Blocked by scope: {host}:{port or '*'}")
 
 

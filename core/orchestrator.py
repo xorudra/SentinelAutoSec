@@ -251,7 +251,14 @@ def run_assessment(assessment_id: int, resume: bool = True) -> None:
                 a.current_stage = "nmap_discovery"
                 a.progress = 60
                 db.commit()
-                ports = sorted({s.port for s in target.scopes if not s.excluded and s.port})
+                scope_ports = [
+                    s.port for s in target.scopes if not s.excluded
+                ]
+                unrestricted = any(p is None for p in scope_ports)
+                explicit_ports = sorted({p for p in scope_ports if p})
+                # No port in any non-excluded scope entry means the user chose
+                # "scan all ports" (1-65535); otherwise only the listed ports.
+                ports = None if unrestricted else explicit_ports
                 asset, _asset_created = get_or_create_asset(
                     db,
                     a.id,
@@ -293,6 +300,8 @@ def run_assessment(assessment_id: int, resume: bool = True) -> None:
                         "services": count,
                         "created_services": created_services,
                         "updated_services": updated_services,
+                        "mode": "all_ports" if unrestricted else "explicit_ports",
+                        "ports": explicit_ports if not unrestricted else [],
                     },
                 )
             elif "nmap_discovery" not in completed:

@@ -58,7 +58,7 @@ Starts the dashboard on a free local port (`127.0.0.1`), opens it in your browse
 ### Using the dashboard (everything is GUI from here)
 
 1. **Add a target** — Targets section: name + URL (e.g. `http://127.0.0.1:8080`), keep *Authorized* checked, click **Add target**.
-2. **Add scope** — mandatory: pick the target, enter host and port, click **Add scope entry**.
+2. **Add scope** — mandatory: pick the target, enter host and port. **Leave Port empty to allow and scan ALL ports (1–65535) with Nmap** (slower); enter a specific port to limit the scan. Click **Add scope entry**.
 3. **Create assessment** — pick the target and a profile (`SAFE`/`EXTENDED`), click **Create assessment**.
 4. **Start** — click **Start** in the assessment row; status and progress refresh automatically every few seconds.
 5. **Inspect findings** — the Findings table updates live; click a row to see evidence and remediation.
@@ -86,6 +86,7 @@ All settings are environment variables (see `.env.example`):
 | `SENTINELSEC_REPORTS` | `reports/generated` | Report output directory |
 | `SENTINELSEC_API_KEY` | unset | Enables API-key auth (`X-API-Key`) on protected routes |
 | `SENTINELSEC_HTTP_TIMEOUT` | `10` | HTTP/TLS request timeout (seconds) |
+| `SENTINELSEC_NMAP_TIMEOUT` | `900` | Max seconds for each Nmap phase (full-range scans are two-phase: discovery + version detection) |
 | `SENTINELSEC_JOB_HEARTBEAT` | `15` | Background job heartbeat interval (seconds) |
 | `SENTINELSEC_JOB_STALE` | `120` | Age after which a non-heartbeating RUNNING job is considered stale and requeued |
 

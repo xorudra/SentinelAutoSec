@@ -54,10 +54,10 @@ a{color:var(--acc)}
 <div class="row" style="margin-top:12px">
 <div class="field"><label>Target</label><select id="sc-target" style="min-width:130px"></select></div>
 <div class="field"><label>Host</label><input id="sc-host" size="16" placeholder="127.0.0.1"></div>
-<div class="field"><label>Port</label><input id="sc-port" size="6" placeholder="8080"></div>
+<div class="field"><label>Port (optional)</label><input id="sc-port" size="10" placeholder="empty = ALL ports"></div>
 <div class="field"><label>Excluded</label><input type="checkbox" id="sc-excl" style="width:18px;height:18px"></div>
 <button class="btn" onclick="addScope()">Add scope entry</button>
-<span class="mut">Scope is mandatory before an assessment can run.</span>
+<span class="mut">Leave Port empty to allow &amp; scan ALL ports (1–65535) with Nmap — slower. Set a port to limit the scan. Scope is mandatory before an assessment can run.</span>
 </div>
 <div class="ok-msg" id="sc-msg"></div>
 </section>
