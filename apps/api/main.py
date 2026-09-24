@@ -61,6 +61,17 @@ app = FastAPI(
     description="Authorized security assessment automation with strict scope enforcement.",
     lifespan=lifespan,
 )
+# The dashboard is a single HTML file with inline JS that changes between
+# releases; without these headers the browser may keep serving a stale cached
+# page (e.g. missing newly added buttons) even after the server restarts.
+@app.middleware("http")
+async def no_cache_for_dashboard(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path in {"/", "/index.html"}:
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+    return response
+
+
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
 
@@ -76,6 +87,10 @@ class TargetLabUpdate(BaseModel):
     is_lab: bool
 
 
+class TargetDeleteRequest(BaseModel):
+    confirm: str = Field(pattern="^(YES|Yes|yes)$")
+
+
 class ScopeCreate(BaseModel):
     host: str = Field(min_length=1, max_length=255)
     port: int | None = Field(default=None, ge=1, le=65535)
@@ -85,6 +100,10 @@ class ScopeCreate(BaseModel):
 class AssessmentCreate(BaseModel):
     target_id: int = Field(gt=0)
     profile: str = Field(default="SAFE", pattern="^(SAFE|EXTENDED)$")
+
+
+class AssessmentDeleteRequest(BaseModel):
+    confirm: str = Field(pattern="^(YES|Yes|yes)$")
 
 
 class ToolInstallRequest(BaseModel):
@@ -256,6 +275,72 @@ def set_target_lab(target_id: int, data: TargetLabUpdate):
         return {"id": t.id, "name": t.name, "is_lab": t.is_lab}
 
 
+@app.delete("/targets/{target_id}", dependencies=[Depends(auth)])
+def delete_target(target_id: int, data: TargetDeleteRequest):
+    """
+    Delete a target and everything that belongs to it (scope entries,
+    assessments, findings, assets, services, evidence, checkpoints, jobs).
+
+    Requires an explicit confirmation in the body: {"confirm": "YES"}.
+    Targets with queued/running assessments are refused so a deletion can
+    never yank the ground out from under an active scan worker.
+    """
+    if data.confirm != "YES":
+        raise HTTPException(400, "Confirmation required: send {\"confirm\": \"YES\"}.")
+    with SessionLocal() as db:
+        t = db.get(Target, target_id)
+        if not t:
+            raise HTTPException(404, "Target not found")
+        blocked = [
+            a.id
+            for a in db.query(Assessment).filter(Assessment.target_id == target_id).all()
+            if job_status(a.id) in ("QUEUED", "RUNNING")
+        ]
+        if blocked:
+            raise HTTPException(
+                409,
+                "Target has queued or running assessments "
+                f"({', '.join(str(i) for i in blocked)}); wait for them to finish "
+                "before deleting.",
+            )
+        name = t.name
+        assessment_ids = [
+            a.id for a in db.query(Assessment).filter(Assessment.target_id == target_id).all()
+        ]
+        if assessment_ids:
+            db.query(Evidence).filter(Evidence.assessment_id.in_(assessment_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(Job).filter(Job.assessment_id.in_(assessment_ids)).delete(
+                synchronize_session=False
+            )
+            asset_ids = [
+                row[0]
+                for row in db.query(Asset.id)
+                .filter(Asset.assessment_id.in_(assessment_ids))
+                .all()
+            ]
+            if asset_ids:
+                db.query(Service).filter(Service.asset_id.in_(asset_ids)).delete(
+                    synchronize_session=False
+                )
+                db.query(Asset).filter(Asset.id.in_(asset_ids)).delete(
+                    synchronize_session=False
+                )
+        db.delete(t)  # cascades: scopes, assessments, findings, checkpoints
+        db.commit()
+        db.add(
+            AuditLog(
+                action="TARGET_DELETE",
+                target=name,
+                result="SUCCESS",
+                details=f"id={target_id} assessments_deleted={len(assessment_ids)}",
+            )
+        )
+        db.commit()
+        return {"deleted": True, "id": target_id, "name": name}
+
+
 @app.post("/targets/{target_id}/scope", dependencies=[Depends(auth)])
 def add_scope(target_id: int, data: ScopeCreate):
     with SessionLocal() as db:
@@ -318,6 +403,54 @@ def resume_assessment(assessment_id: int):
             raise HTTPException(404, "Assessment not found")
     submit_assessment(assessment_id)
     return {"id": assessment_id, "status": "QUEUED", "checkpoint": checkpoint_state(assessment_id)}
+
+
+@app.delete("/assessments/{assessment_id}", dependencies=[Depends(auth)])
+def delete_assessment(assessment_id: int, data: AssessmentDeleteRequest):
+    """
+    Delete a single assessment with its findings, assets, services, evidence,
+    checkpoints and job row. Requires {"confirm": "YES"}. Assessments whose
+    job is queued or running must not be deleted.
+    """
+    if data.confirm != "YES":
+        raise HTTPException(400, "Confirmation required: send {\"confirm\": \"YES\"}.")
+    with SessionLocal() as db:
+        a = db.get(Assessment, assessment_id)
+        if not a:
+            raise HTTPException(404, "Assessment not found")
+        if job_status(assessment_id) in ("QUEUED", "RUNNING"):
+            raise HTTPException(
+                409,
+                "Assessment is queued or running; wait for it to finish before deleting.",
+            )
+        target_name = a.target.name if a.target else None
+        db.query(Evidence).filter(Evidence.assessment_id == assessment_id).delete(
+            synchronize_session=False
+        )
+        asset_ids = [
+            row[0]
+            for row in db.query(Asset.id).filter(Asset.assessment_id == assessment_id).all()
+        ]
+        if asset_ids:
+            db.query(Service).filter(Service.asset_id.in_(asset_ids)).delete(
+                synchronize_session=False
+            )
+            db.query(Asset).filter(Asset.id.in_(asset_ids)).delete(synchronize_session=False)
+        db.query(Job).filter(Job.assessment_id == assessment_id).delete(
+            synchronize_session=False
+        )
+        db.delete(a)  # cascades: findings, checkpoints
+        db.commit()
+        db.add(
+            AuditLog(
+                action="ASSESSMENT_DELETE",
+                target=target_name,
+                result="SUCCESS",
+                details=f"assessment_id={assessment_id}",
+            )
+        )
+        db.commit()
+        return {"deleted": True, "id": assessment_id}
 
 
 @app.get("/assessments", dependencies=[Depends(auth)])
