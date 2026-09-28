@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from apps.api import main as api_main
+from core.config import settings
 from core.db import SessionLocal
 from database.models import (
     Assessment,
@@ -193,3 +194,37 @@ def test_delete_assessment_returns_404_for_unknown_id():
     with pytest.raises(api_main.HTTPException) as excinfo:
         api_main.delete_assessment(424242, api_main.AssessmentDeleteRequest(confirm="YES"))
     assert excinfo.value.status_code == 404
+
+
+def _write_reports(assessment_id):
+    settings.reports_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for suffix in ("md", "json", "html", "pdf"):
+        path = settings.reports_dir / f"assessment-{assessment_id}.{suffix}"
+        path.write_text("report body", encoding="utf-8")
+        paths.append(path)
+    return paths
+
+
+def test_delete_target_removes_generated_reports():
+    with SessionLocal() as db:
+        t = _target(db, "report-target")
+        a = _assessment(db, t.id)
+        tid, aid = t.id, a.id
+    paths = _write_reports(aid)
+
+    api_main.delete_target(tid, api_main.TargetDeleteRequest(confirm="YES"))
+
+    assert all(not path.exists() for path in paths)
+
+
+def test_delete_assessment_removes_generated_reports():
+    with SessionLocal() as db:
+        t = _target(db, "report-assessment-target")
+        a = _assessment(db, t.id)
+        aid = a.id
+    paths = _write_reports(aid)
+
+    api_main.delete_assessment(aid, api_main.AssessmentDeleteRequest(confirm="YES"))
+
+    assert all(not path.exists() for path in paths)

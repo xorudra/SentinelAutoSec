@@ -115,6 +115,22 @@ def auth(x_api_key: str | None = Header(default=None)):
         raise HTTPException(401, "Invalid API key")
 
 
+def _delete_generated_reports(assessment_ids: list[int]) -> None:
+    """Best-effort removal of report files belonging to deleted assessments.
+
+    Without this, a deleted assessment's report would still be served by
+    /reports/view because the generated file outlives the database row.
+    """
+    for assessment_id in assessment_ids:
+        for suffix in ("md", "json", "html", "pdf"):
+            path = settings.reports_dir / f"assessment-{assessment_id}.{suffix}"
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                # Cleanup is best-effort; a locked file must not fail a deletion.
+                continue
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "version": app.version}
@@ -329,6 +345,7 @@ def delete_target(target_id: int, data: TargetDeleteRequest):
                 )
         db.delete(t)  # cascades: scopes, assessments, findings, checkpoints
         db.commit()
+        _delete_generated_reports(assessment_ids)
         db.add(
             AuditLog(
                 action="TARGET_DELETE",
@@ -441,6 +458,7 @@ def delete_assessment(assessment_id: int, data: AssessmentDeleteRequest):
         )
         db.delete(a)  # cascades: findings, checkpoints
         db.commit()
+        _delete_generated_reports([assessment_id])
         db.add(
             AuditLog(
                 action="ASSESSMENT_DELETE",

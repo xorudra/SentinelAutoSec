@@ -62,7 +62,7 @@ Starts the dashboard on a free local port (`127.0.0.1`), opens it in your browse
 
 > **Lab data:** lab targets (e.g. the bundled `local-lab` demo) are hidden by default — the dashboard shows only your own scans. Use the **Include lab data** switch at the top of the page to view lab results, and "Mark lab / Unmark lab" on any target row to change its lab status.
 
-> **Deleting data:** every target row and assessment row has a red **Delete** button. Deletion is double-confirmed: set the small **Delete?** dropdown on that row to **Yes**, then click **Delete** and accept the browser confirmation box — only then is the record removed. Deleting a target permanently removes the target with its scope, assessments, findings, assets, services, evidence and job records (one transaction, logged in Activity). Queued/running scans refuse deletion until they finish.
+> **Deleting data:** every target row and assessment row has a red **Delete** button. Deletion is double-confirmed: set the small **Delete?** dropdown on that row to **Yes**, then click **Delete** and accept the browser confirmation box — only then is the record removed. Deleting a target permanently removes the target with its scope, assessments, findings, assets, services, evidence, job records and its generated report files (one transaction, logged in Activity). Queued/running scans refuse deletion until they finish.
 3. **Create assessment** — pick the target and a profile (`SAFE`/`EXTENDED`), click **Create assessment**.
 4. **Start** — click **Start** in the assessment row; status and progress refresh automatically every few seconds.
 5. **Inspect findings** — the Findings table updates live; click a row to see evidence and remediation.
@@ -140,7 +140,7 @@ Any future AI component should analyze normalized evidence only. It must not aut
 ## Development
 
 ```bash
-pytest -q        # 90 unit tests
+pytest -q        # 92 unit tests
 ruff check .     # lint
 mypy .           # type check
 python -m compileall -q .

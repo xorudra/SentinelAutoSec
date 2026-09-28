@@ -164,8 +164,8 @@ async function loadTargets() {
       <td>${(t.scope || []).map(s => `<span class="chip">${esc(s.host)}:${s.port ?? "*"}${s.excluded ? " (excluded)" : ""}</span>`).join("") || '<span class="mut">none</span>'}</td>
       <td style="white-space:nowrap">
         <button class="btn small" onclick="setLab(${t.id}, ${!t.is_lab})">${t.is_lab ? "Unmark lab" : "Mark lab"}</button>
-        <select id="del-sel-${t.id}" class="btn small" style="padding:4px 6px" title="Safety switch: choose Yes to arm the Delete button">
-          <option value="">Delete?</option><option value="yes">Yes</option><option value="no">No</option>
+        <select id="del-sel-${t.id}" class="btn small" style="padding:4px 6px" onchange="armDelete('t', ${t.id}, this.value)" title="Safety switch: choose Yes to arm the Delete button">
+          <option value=""${armedDelete["t" + t.id] ? "" : " selected"}>Delete?</option><option value="yes"${armedDelete["t" + t.id] === "yes" ? " selected" : ""}>Yes</option><option value="no"${armedDelete["t" + t.id] === "no" ? " selected" : ""}>No</option>
         </select>
         <button class="btn small" style="border-color:var(--bad);color:var(--bad)" onclick="deleteTarget(${t.id}, '${esc(t.name).replace(/'/g, "\\'")}')" title="Delete this target and ALL its assessments, findings and reports — a confirmation box will appear">Delete</button>
       </td>
@@ -173,18 +173,23 @@ async function loadTargets() {
   } catch (e) { $("targets").innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`; }
 }
 
+// The "Delete? Yes/No" safety switch lives in JS state as well as the DOM:
+// the tables re-render every 3 seconds, which would otherwise reset the
+// dropdown before the Delete button could be pressed.
+const armedDelete = {};
+function armDelete(kind, id, value) { armedDelete[kind + id] = value; }
+function isArmed(kind, id) { return armedDelete[kind + id] === "yes"; }
+
 async function deleteTarget(id, name) {
-  const sel = $("del-sel-" + id);
-  if (!sel || sel.value !== "yes") {
-    sel.value = "";
+  if (!isArmed("t", id)) {
     $("t-msg").textContent = "Safety switch: set the small 'Delete?' dropdown on this row to Yes first.";
     return;
   }
-  sel.value = "";
-  if (!window.confirm(`Delete target "${name}" (id ${id})?\n\nThis permanently removes the target, its scope, ALL its assessments, findings, evidence and generated reports.\nThis cannot be undone.`)) return;
+  if (!window.confirm(`Delete target "${name}" (id ${id})?\n\nThis permanently removes the target, its scope, ALL its assessments, findings, evidence and generated report files.\nThis cannot be undone.`)) return;
   const msg = $("t-msg");
   try {
     await api(`/targets/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: "YES" }) });
+    armedDelete["t" + id] = "";
     msg.textContent = `Target "${name}" deleted.`;
     await refreshAll();
   } catch (e) { msg.textContent = "Error: " + e.message; }
@@ -243,8 +248,8 @@ async function loadAssessments() {
         <button class="btn small" onclick="resumeAssessment(${a.id})" ${a.status === "COMPLETED" ? "disabled" : ""}>Resume</button>
         <button class="btn small" onclick="makeReport(${a.id},'html')">Report</button>
         <button class="btn small" onclick="openReport(${a.id})" title="Open HTML report in a new tab">Open</button>
-        <select id="adel-sel-${a.id}" class="btn small" style="padding:4px 6px" title="Safety switch: choose Yes to arm the Delete button">
-          <option value="">Delete?</option><option value="yes">Yes</option><option value="no">No</option>
+        <select id="adel-sel-${a.id}" class="btn small" style="padding:4px 6px" onchange="armDelete('a', ${a.id}, this.value)" title="Safety switch: choose Yes to arm the Delete button">
+          <option value=""${armedDelete["a" + a.id] ? "" : " selected"}>Delete?</option><option value="yes"${armedDelete["a" + a.id] === "yes" ? " selected" : ""}>Yes</option><option value="no"${armedDelete["a" + a.id] === "no" ? " selected" : ""}>No</option>
         </select>
         <button class="btn small" style="border-color:var(--bad);color:var(--bad)" onclick="deleteAssessment(${a.id})" title="Delete this assessment with its findings, assets, services, evidence, checkpoints and job — a confirmation box will appear">Delete</button>
       </td></tr>`;
@@ -284,17 +289,15 @@ async function resumeAssessment(id) {
 }
 
 async function deleteAssessment(id) {
-  const sel = $("adel-sel-" + id);
-  if (!sel || sel.value !== "yes") {
-    sel.value = "";
+  if (!isArmed("a", id)) {
     $("a-msg").textContent = "Safety switch: set the small 'Delete?' dropdown on this row to Yes first.";
     return;
   }
-  sel.value = "";
-  if (!window.confirm(`Delete assessment #${id}?\n\nThis permanently removes the assessment with its findings, assets, services, evidence, checkpoints and job record.\nThis cannot be undone.`)) return;
+  if (!window.confirm(`Delete assessment #${id}?\n\nThis permanently removes the assessment with its findings, assets, services, evidence, checkpoints, job record and generated report files.\nThis cannot be undone.`)) return;
   const msg = $("a-msg");
   try {
     await api(`/assessments/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirm: "YES" }) });
+    armedDelete["a" + id] = "";
     msg.textContent = `Assessment #${id} deleted.`;
     await refreshAll();
   } catch (e) { msg.textContent = "Error: " + e.message; }
