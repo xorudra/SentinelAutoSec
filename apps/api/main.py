@@ -28,7 +28,7 @@ from database.models import (
     Target,
     TargetScope,
 )
-from integrations.external.locate import locate
+from integrations.external.locate import clear_cache, locate
 from integrations.external.nuclei import available as nuclei_available
 from integrations.external.zap import _zap_command as zap_command
 from integrations.external.zap import available as zap_available
@@ -365,6 +365,9 @@ def _run_tool_install(tool: str) -> None:
     except Exception as exc:  # noqa: BLE001 - the error is surfaced in the dashboard
         _install_state["error"] = f"{type(exc).__name__}: {exc}"
     finally:
+        # Forget memoized tool lookups so the chip refresh right after a
+        # successful install immediately sees the new binary.
+        clear_cache()
         _install_state["running"] = False
         _install_state["finished"] = True
 

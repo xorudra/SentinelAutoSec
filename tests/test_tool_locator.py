@@ -1,7 +1,16 @@
 """Tests for the tool locator: PATH first, then common install locations."""
 
+import pytest
+
 from integrations.external import locate as locate_module
 from integrations.external.locate import locate
+
+
+@pytest.fixture(autouse=True)
+def _fresh_locator_cache():
+    locate_module.clear_cache()
+    yield
+    locate_module.clear_cache()
 
 
 def test_locate_prefers_path(monkeypatch):
@@ -40,3 +49,38 @@ def test_locate_returns_none_when_missing(monkeypatch, tmp_path):
 def test_project_tools_bin_is_in_fallbacks():
     normalized = [str(d).replace("\\", "/").lower() for d in locate_module._FALLBACK_DIRS]
     assert any(path.endswith("tools/bin") for path in normalized)
+
+
+def test_locate_memoizes_repeated_lookups(monkeypatch):
+    calls = []
+    monkeypatch.setattr(locate_module, "_FALLBACK_DIRS", ())
+
+    def fake_which(name):
+        calls.append(name)
+        return f"/usr/bin/{name}"
+
+    monkeypatch.setattr(locate_module, "which", fake_which)
+    assert locate("nmap") == "/usr/bin/nmap"
+    assert locate("nmap") == "/usr/bin/nmap"
+    assert calls == ["nmap"]  # second lookup served from the cache
+
+
+def test_locate_cache_entries_expire(monkeypatch):
+    calls = []
+    monkeypatch.setattr(locate_module, "_FALLBACK_DIRS", ())
+    monkeypatch.setattr(locate_module, "which", lambda name: calls.append(name) or f"/usr/bin/{name}")
+    monkeypatch.setattr(locate_module, "_CACHE_TTL_SECONDS", -1.0)  # never fresh
+    assert locate("nuclei") == "/usr/bin/nuclei"
+    assert locate("nuclei") == "/usr/bin/nuclei"
+    assert len(calls) == 2  # expired entries are re-resolved
+
+
+def test_clear_cache_forces_fresh_lookup(monkeypatch):
+    calls = []
+    monkeypatch.setattr(locate_module, "_FALLBACK_DIRS", ())
+    monkeypatch.setattr(locate_module, "which", lambda name: calls.append(name) or f"/usr/bin/{name}")
+    assert locate("zap.bat") == "/usr/bin/zap.bat"
+    assert len(calls) == 1
+    locate_module.clear_cache()
+    assert locate("zap.bat") == "/usr/bin/zap.bat"
+    assert len(calls) == 2

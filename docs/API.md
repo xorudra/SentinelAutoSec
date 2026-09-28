@@ -11,7 +11,7 @@ If `SENTINELSEC_API_KEY` is configured, protected routes require `X-API-Key`.
 Core routes:
 
 - `GET /health`
-- `GET /tools`
+- `GET /tools` — availability + resolved path for Nmap / Nuclei / ZAP; lookups are memoized for 30 s and invalidated automatically when an install finishes
 - `POST /tools/install` — start the one-click installer for a tool (`{"tool": "nuclei" | "nmap" | "zap"}`); returns 409 if an install is already running
 - `GET /tools/install/status` — polling endpoint for the running install (`running`, `tool`, `finished`, `error`, `log`)
 - `POST /targets`
