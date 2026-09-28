@@ -134,16 +134,11 @@ async function setLab(id, isLab) {
 }
 $("lab-toggle").checked = labOn();
 
-async function loadStats() {
-  try {
-    const targets = await api(withLab("/targets"));
-    const assess = await api(withLab("/assessments"));
-    const findings = await api(withLab("/findings"));
-    $("s-targets").textContent = targets.length;
-    $("s-assess").textContent = assess.length;
-    $("s-findings").textContent = findings.length;
-    $("s-critical").textContent = findings.filter(f => f.severity === "CRITICAL").length;
-  } catch (e) { console.error(e); }
+function renderStats(s) {
+  $("s-targets").textContent = s.targets;
+  $("s-assess").textContent = s.assessments;
+  $("s-findings").textContent = s.findings;
+  $("s-critical").textContent = s.critical;
 }
 
 function targetOptions(selectEl, targets) {
@@ -152,9 +147,9 @@ function targetOptions(selectEl, targets) {
   if (targets.some(t => String(t.id) === current)) selectEl.value = current;
 }
 
-async function loadTargets() {
+async function loadTargets(rows) {
   try {
-    const targets = await api(withLab("/targets"));
+    const targets = rows || await api(withLab("/targets"));
     targetOptions($("sc-target"), targets);
     targetOptions($("a-target"), targets);
     $("targets").innerHTML = targets.map(t => `<tr>
@@ -231,9 +226,9 @@ async function addScope() {
     await loadTargets();
   } catch (e) { msg.textContent = "Error: " + e.message; }
 }
-async function loadAssessments() {
+async function loadAssessments(preset) {
   try {
-    const [assess, targets] = await Promise.all([api(withLab("/assessments")), api(withLab("/targets"))]);
+    const [assess, targets] = preset || await Promise.all([api(withLab("/assessments")), api(withLab("/targets"))]);
     const names = Object.fromEntries(targets.map(t => [t.id, t.name]));
     $("assess").innerHTML = assess.map(a => {
       const canStart = !["RUNNING", "COMPLETED"].includes(a.status);
@@ -313,10 +308,10 @@ async function makeReport(id, fmt) {
 
 function openReport(id) { window.open(`/reports/view?assessment_id=${id}&fmt=html`, "_blank"); }
 
-async function loadFindings(manual) {
+async function loadFindings(manual, rows) {
   try {
     const filter = $("f-filter").value;
-    const findings = await api(withLab("/findings", filter ? { assessment_id: filter } : null));
+    const findings = rows || await api(withLab("/findings", filter ? { assessment_id: filter } : null));
     $("findings").innerHTML = findings.map(f => `<tr style="cursor:pointer" onclick="showFinding(${f.id})">
       <td>${f.id}</td>
       <td><span class="sev ${esc(f.severity)}">${esc(f.severity)}</span></td>
@@ -334,14 +329,11 @@ async function showFinding(id) {
   } catch (e) { box.style.display = "block"; box.textContent = "Error: " + e.message; }
 }
 
-async function loadAudit() {
-  try {
-    const logs = await api(withLab("/audit-logs"));
-    $("audit").innerHTML = logs.slice(0, 10).map(l => `<tr>
-      <td class="mut">${esc((l.created_at || "").replace("T", " ").slice(0, 19))}</td>
-      <td>${esc(l.action)}</td><td>${esc(l.target ?? "—")}</td>
-      <td class="${l.result === "FAILED" ? "err" : "ok-msg"}">${esc(l.result)}</td></tr>`).join("");
-  } catch (e) { console.error(e); }
+function renderAudit(logs) {
+  $("audit").innerHTML = logs.slice(0, 10).map(l => `<tr>
+    <td class="mut">${esc((l.created_at || "").replace("T", " ").slice(0, 19))}</td>
+    <td>${esc(l.action)}</td><td>${esc(l.target ?? "—")}</td>
+    <td class="${l.result === "FAILED" ? "err" : "ok-msg"}">${esc(l.result)}</td></tr>`).join("");
 }
 
 let installTimer = null;
@@ -396,12 +388,42 @@ async function pollInstall() {
   } catch (e) { console.error(e); }
 }
 
+// One aggregated request per tick instead of the previous five-request
+// fan-out (targets alone used to be fetched three times per tick).
+async function loadSummary() {
+  try {
+    const filter = $("f-filter").value;
+    const summaryPromise = api(withLab("/dashboard/summary"));
+    // An active assessment filter keeps its old behavior: filtered findings.
+    const filteredPromise = filter
+      ? api(withLab("/findings", { assessment_id: filter }))
+      : Promise.resolve(null);
+    const [s, filtered] = await Promise.all([summaryPromise, filteredPromise]);
+    renderStats(s.stats);
+    renderAudit(s.audit);
+    await Promise.all([
+      loadTargets(s.targets),
+      loadAssessments([s.assessments, s.targets]),
+      loadFindings(false, filtered || s.findings),
+    ]);
+  } catch (e) {
+    // Keep the last good snapshot on transient errors; only surface the
+    // failure when the page has nothing to show yet.
+    console.error(e);
+    if (!$("targets").children.length) {
+      $("targets").innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`;
+    }
+  }
+}
+
 async function refreshAll() {
-  await Promise.all([loadStats(), loadTargets(), loadAssessments(), loadFindings(), loadAudit()]);
+  await loadSummary();
 }
 
 refreshAll();
 loadTools();
-setInterval(refreshAll, 3000);
+// Poll every 3s — but skip ticks while the tab is hidden, since a hidden
+// dashboard has nobody to show the data to.
+setInterval(() => { if (!document.hidden) refreshAll(); }, 3000);
 </script>
 </body></html>

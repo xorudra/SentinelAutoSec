@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, HttpUrl
+from sqlalchemy.orm import selectinload
 
 from core.checkpoints import checkpoint_state
 from core.config import settings
@@ -19,6 +20,7 @@ from database.models import (
     Assessment,
     Asset,
     AuditLog,
+    Checkpoint,
     Evidence,
     Finding,
     Job,
@@ -129,6 +131,171 @@ def _delete_generated_reports(assessment_ids: list[int]) -> None:
             except OSError:
                 # Cleanup is best-effort; a locked file must not fail a deletion.
                 continue
+
+
+# ---------------------------------------------------------------------------
+# Shared row builders
+#
+# The list endpoints and /dashboard/summary serialize the same data, so the
+# query logic lives here once. Each builder issues a fixed number of queries
+# (eager loading / batched lookups) instead of one query per returned row.
+# ---------------------------------------------------------------------------
+
+
+def _target_rows(db, include_lab: bool) -> list[dict[str, Any]]:
+    """Serialize targets with their scopes in a fixed two-query pattern."""
+    query = db.query(Target).options(selectinload(Target.scopes)).order_by(Target.id)
+    if not include_lab:
+        query = query.filter(Target.is_lab.is_(False))
+    return [
+        {
+            "id": t.id,
+            "name": t.name,
+            "authorized": t.authorization_status,
+            "is_lab": t.is_lab,
+            "url": t.url,
+            "ip": t.ip,
+            "scope": [
+                {"host": s.host, "port": s.port, "excluded": s.excluded} for s in t.scopes
+            ],
+        }
+        for t in query.all()
+    ]
+
+
+def _job_status_map(db, assessment_ids: list[int]) -> dict[int, str]:
+    """Fetch job statuses for many assessments in one query (never N+1)."""
+    if not assessment_ids:
+        return {}
+    rows = (
+        db.query(Job.assessment_id, Job.status)
+        .filter(Job.assessment_id.in_(assessment_ids))
+        .all()
+    )
+    return {assessment_id: status for assessment_id, status in rows}
+
+
+def _assessment_rows(db, include_lab: bool) -> list[dict[str, Any]]:
+    query = db.query(Assessment).order_by(Assessment.id)
+    if not include_lab:
+        query = query.join(Target, Assessment.target_id == Target.id).filter(
+            Target.is_lab.is_(False)
+        )
+    rows = query.all()
+    jobs = _job_status_map(db, [a.id for a in rows])
+    return [
+        {
+            "id": a.id,
+            "target_id": a.target_id,
+            "status": a.status,
+            "profile": a.profile,
+            "stage": a.current_stage,
+            "progress": a.progress,
+            "error": a.error,
+            "job": jobs.get(a.id),
+        }
+        for a in rows
+    ]
+
+
+def _finding_query(db, assessment_id: int | None, include_lab: bool):
+    """Filtered Finding query shared by listing and counting."""
+    query = db.query(Finding)
+    if assessment_id:
+        query = query.filter(Finding.assessment_id == assessment_id)
+    if not include_lab:
+        query = (
+            query.join(Assessment, Finding.assessment_id == Assessment.id)
+            .join(Target, Assessment.target_id == Target.id)
+            .filter(Target.is_lab.is_(False))
+        )
+    return query
+
+
+def _finding_rows(
+    db,
+    assessment_id: int | None = None,
+    include_lab: bool = False,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    query = _finding_query(db, assessment_id, include_lab)
+    if limit:
+        # Take the newest rows, then restore ascending order for display.
+        rows = list(reversed(query.order_by(Finding.id.desc()).limit(limit).all()))
+    else:
+        rows = query.order_by(Finding.id).all()
+    return [
+        {
+            "id": f.id,
+            "assessment_id": f.assessment_id,
+            "title": f.title,
+            "severity": f.severity,
+            "confidence": f.confidence,
+            "category": f.category,
+            "asset": f.asset,
+            "status": f.status,
+            "cwe": f.cwe,
+        }
+        for f in rows
+    ]
+
+
+def _audit_rows(db, include_lab: bool, limit: int = 200) -> list[dict[str, Any]]:
+    query = db.query(AuditLog).order_by(AuditLog.id.desc())
+    if not include_lab:
+        lab_names = [
+            row[0] for row in db.query(Target.name).filter(Target.is_lab.is_(True)).all()
+        ]
+        if lab_names:
+            query = query.filter(AuditLog.target.notin_(lab_names))
+    return [
+        {
+            "id": x.id,
+            "actor": x.actor,
+            "action": x.action,
+            "target": x.target,
+            "result": x.result,
+            "details": x.details,
+            "created_at": x.created_at.isoformat(),
+        }
+        for x in query.limit(limit)
+    ]
+
+
+def _purge_assessment_data(db, assessment_ids: list[int]) -> None:
+    """
+    Delete every row belonging to the given assessments, children first.
+
+    SQLite foreign keys are enforced (see core.db), and findings reference
+    both assets and services, so order matters: evidence -> findings ->
+    checkpoints -> jobs -> services -> assets -> assessments.
+    """
+    if not assessment_ids:
+        return
+    db.query(Evidence).filter(Evidence.assessment_id.in_(assessment_ids)).delete(
+        synchronize_session=False
+    )
+    db.query(Finding).filter(Finding.assessment_id.in_(assessment_ids)).delete(
+        synchronize_session=False
+    )
+    db.query(Checkpoint).filter(Checkpoint.assessment_id.in_(assessment_ids)).delete(
+        synchronize_session=False
+    )
+    db.query(Job).filter(Job.assessment_id.in_(assessment_ids)).delete(
+        synchronize_session=False
+    )
+    asset_ids = [
+        row[0]
+        for row in db.query(Asset.id).filter(Asset.assessment_id.in_(assessment_ids)).all()
+    ]
+    if asset_ids:
+        db.query(Service).filter(Service.asset_id.in_(asset_ids)).delete(
+            synchronize_session=False
+        )
+        db.query(Asset).filter(Asset.id.in_(asset_ids)).delete(synchronize_session=False)
+    db.query(Assessment).filter(Assessment.id.in_(assessment_ids)).delete(
+        synchronize_session=False
+    )
 
 
 @app.get("/health")
@@ -252,23 +419,7 @@ def create_target(data: TargetCreate):
 @app.get("/targets", dependencies=[Depends(auth)])
 def list_targets(include_lab: bool = False):
     with SessionLocal() as db:
-        q = db.query(Target)
-        if not include_lab:
-            q = q.filter(Target.is_lab.is_(False))
-        return [
-            {
-                "id": t.id,
-                "name": t.name,
-                "authorized": t.authorization_status,
-                "is_lab": t.is_lab,
-                "url": t.url,
-                "ip": t.ip,
-                "scope": [
-                    {"host": s.host, "port": s.port, "excluded": s.excluded} for s in t.scopes
-                ],
-            }
-            for t in q.all()
-        ]
+        return _target_rows(db, include_lab)
 
 
 @app.post("/targets/{target_id}/lab", dependencies=[Depends(auth)])
@@ -323,27 +474,12 @@ def delete_target(target_id: int, data: TargetDeleteRequest):
         assessment_ids = [
             a.id for a in db.query(Assessment).filter(Assessment.target_id == target_id).all()
         ]
-        if assessment_ids:
-            db.query(Evidence).filter(Evidence.assessment_id.in_(assessment_ids)).delete(
-                synchronize_session=False
-            )
-            db.query(Job).filter(Job.assessment_id.in_(assessment_ids)).delete(
-                synchronize_session=False
-            )
-            asset_ids = [
-                row[0]
-                for row in db.query(Asset.id)
-                .filter(Asset.assessment_id.in_(assessment_ids))
-                .all()
-            ]
-            if asset_ids:
-                db.query(Service).filter(Service.asset_id.in_(asset_ids)).delete(
-                    synchronize_session=False
-                )
-                db.query(Asset).filter(Asset.id.in_(asset_ids)).delete(
-                    synchronize_session=False
-                )
-        db.delete(t)  # cascades: scopes, assessments, findings, checkpoints
+        _purge_assessment_data(db, assessment_ids)
+        # Children first: scope rows reference the target (FKs are enforced).
+        db.query(TargetScope).filter(TargetScope.target_id == target_id).delete(
+            synchronize_session=False
+        )
+        db.delete(t)  # cascade collections are already empty after the purge
         db.commit()
         _delete_generated_reports(assessment_ids)
         db.add(
@@ -441,22 +577,7 @@ def delete_assessment(assessment_id: int, data: AssessmentDeleteRequest):
                 "Assessment is queued or running; wait for it to finish before deleting.",
             )
         target_name = a.target.name if a.target else None
-        db.query(Evidence).filter(Evidence.assessment_id == assessment_id).delete(
-            synchronize_session=False
-        )
-        asset_ids = [
-            row[0]
-            for row in db.query(Asset.id).filter(Asset.assessment_id == assessment_id).all()
-        ]
-        if asset_ids:
-            db.query(Service).filter(Service.asset_id.in_(asset_ids)).delete(
-                synchronize_session=False
-            )
-            db.query(Asset).filter(Asset.id.in_(asset_ids)).delete(synchronize_session=False)
-        db.query(Job).filter(Job.assessment_id == assessment_id).delete(
-            synchronize_session=False
-        )
-        db.delete(a)  # cascades: findings, checkpoints
+        _purge_assessment_data(db, [assessment_id])
         db.commit()
         _delete_generated_reports([assessment_id])
         db.add(
@@ -474,24 +595,7 @@ def delete_assessment(assessment_id: int, data: AssessmentDeleteRequest):
 @app.get("/assessments", dependencies=[Depends(auth)])
 def assessments(include_lab: bool = False):
     with SessionLocal() as db:
-        q = db.query(Assessment)
-        if not include_lab:
-            q = q.join(Target, Assessment.target_id == Target.id).filter(
-                Target.is_lab.is_(False)
-            )
-        return [
-            {
-                "id": a.id,
-                "target_id": a.target_id,
-                "status": a.status,
-                "profile": a.profile,
-                "stage": a.current_stage,
-                "progress": a.progress,
-                "error": a.error,
-                "job": job_status(a.id),
-            }
-            for a in q.all()
-        ]
+        return _assessment_rows(db, include_lab)
 
 
 @app.get("/assessments/{assessment_id}/checkpoint", dependencies=[Depends(auth)])
@@ -505,29 +609,7 @@ def checkpoint(assessment_id: int):
 @app.get("/findings", dependencies=[Depends(auth)])
 def list_findings(assessment_id: int | None = None, include_lab: bool = False):
     with SessionLocal() as db:
-        q = db.query(Finding)
-        if assessment_id:
-            q = q.filter_by(assessment_id=assessment_id)
-        if not include_lab:
-            q = (
-                q.join(Assessment, Finding.assessment_id == Assessment.id)
-                .join(Target, Assessment.target_id == Target.id)
-                .filter(Target.is_lab.is_(False))
-            )
-        return [
-            {
-                "id": f.id,
-                "assessment_id": f.assessment_id,
-                "title": f.title,
-                "severity": f.severity,
-                "confidence": f.confidence,
-                "category": f.category,
-                "asset": f.asset,
-                "status": f.status,
-                "cwe": f.cwe,
-            }
-            for f in q.order_by(Finding.id).all()
-        ]
+        return _finding_rows(db, assessment_id=assessment_id, include_lab=include_lab)
 
 
 @app.get("/findings/{finding_id}", dependencies=[Depends(auth)])
@@ -577,6 +659,18 @@ def assets(assessment_id: int | None = None):
         q = db.query(Asset)
         if assessment_id:
             q = q.filter_by(assessment_id=assessment_id)
+        asset_rows = q.order_by(Asset.id).all()
+        # One services query for all assets instead of one per asset (N+1).
+        services_by_asset: dict[int, list[Service]] = {}
+        if asset_rows:
+            service_rows = (
+                db.query(Service)
+                .filter(Service.asset_id.in_([a.id for a in asset_rows]))
+                .order_by(Service.id)
+                .all()
+            )
+            for service in service_rows:
+                services_by_asset.setdefault(service.asset_id, []).append(service)
         return [
             {
                 "id": a.id,
@@ -591,35 +685,50 @@ def assets(assessment_id: int | None = None):
                         "name": s.name,
                         "version": s.version,
                     }
-                    for s in db.query(Service).filter_by(asset_id=a.id).all()
+                    for s in services_by_asset.get(a.id, [])
                 ],
             }
-            for a in q.all()
+            for a in asset_rows
         ]
 
 
 @app.get("/audit-logs", dependencies=[Depends(auth)])
 def audit_logs(include_lab: bool = False):
     with SessionLocal() as db:
-        q = db.query(AuditLog).order_by(AuditLog.id.desc())
-        if not include_lab:
-            lab_names = [
-                row[0] for row in db.query(Target.name).filter(Target.is_lab.is_(True)).all()
-            ]
-            if lab_names:
-                q = q.filter(AuditLog.target.notin_(lab_names))
-        return [
-            {
-                "id": x.id,
-                "actor": x.actor,
-                "action": x.action,
-                "target": x.target,
-                "result": x.result,
-                "details": x.details,
-                "created_at": x.created_at.isoformat(),
-            }
-            for x in q.limit(200)
-        ]
+        return _audit_rows(db, include_lab, limit=200)
+
+
+@app.get("/dashboard/summary", dependencies=[Depends(auth)])
+def dashboard_summary(include_lab: bool = False, finding_limit: int = 200):
+    """
+    Everything the dashboard needs, in a single request.
+
+    The UI used to poll one request per panel every few seconds (targets were
+    fetched three times per tick). One aggregated response keeps a poll to a
+    single HTTP round-trip and a fixed, small number of queries.
+    """
+    limit = max(1, min(finding_limit, 1000))
+    with SessionLocal() as db:
+        targets = _target_rows(db, include_lab)
+        assessments = _assessment_rows(db, include_lab)
+        findings = _finding_rows(db, include_lab=include_lab, limit=limit)
+        audit = _audit_rows(db, include_lab, limit=10)
+        # Stats always reflect the true totals, even when findings are limited.
+        finding_query = _finding_query(db, None, include_lab)
+        total_findings = finding_query.count()
+        critical = finding_query.filter(Finding.severity == "CRITICAL").count()
+    return {
+        "stats": {
+            "targets": len(targets),
+            "assessments": len(assessments),
+            "findings": total_findings,
+            "critical": critical,
+        },
+        "targets": targets,
+        "assessments": assessments,
+        "findings": findings,
+        "audit": audit,
+    }
 
 
 @app.post("/reports", dependencies=[Depends(auth)])

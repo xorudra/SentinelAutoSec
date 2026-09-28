@@ -140,7 +140,7 @@ Any future AI component should analyze normalized evidence only. It must not aut
 ## Development
 
 ```bash
-pytest -q        # 92 unit tests
+pytest -q        # 102 unit tests
 ruff check .     # lint
 mypy .           # type check
 python -m compileall -q .

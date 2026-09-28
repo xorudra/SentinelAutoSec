@@ -88,37 +88,45 @@ def get_or_create_service(
 
 
 def inventory_summary(db, assessment_id: int) -> dict:
-    """Return a structured summary of discovered assets and services."""
+    """Return a structured summary of discovered assets and services.
+
+    Assets and services are fetched with two queries total (instead of one
+    services query per asset) and grouped in Python.
+    """
 
     assets = db.query(Asset).filter_by(assessment_id=assessment_id).order_by(Asset.id).all()
 
-    result = []
+    services_by_asset: dict[int, list[Service]] = {}
 
-    for asset in assets:
-        services = (
+    if assets:
+        service_rows = (
             db.query(Service)
-            .filter_by(asset_id=asset.id)
+            .filter(Service.asset_id.in_([asset.id for asset in assets]))
             .order_by(Service.port, Service.protocol)
             .all()
         )
 
-        result.append(
-            {
-                "id": asset.id,
-                "host": asset.host,
-                "kind": asset.kind,
-                "services": [
-                    {
-                        "id": service.id,
-                        "port": service.port,
-                        "protocol": service.protocol,
-                        "name": service.name,
-                        "version": service.version,
-                    }
-                    for service in services
-                ],
-            }
-        )
+        for service in service_rows:
+            services_by_asset.setdefault(service.asset_id, []).append(service)
+
+    result = [
+        {
+            "id": asset.id,
+            "host": asset.host,
+            "kind": asset.kind,
+            "services": [
+                {
+                    "id": service.id,
+                    "port": service.port,
+                    "protocol": service.protocol,
+                    "name": service.name,
+                    "version": service.version,
+                }
+                for service in services_by_asset.get(asset.id, [])
+            ],
+        }
+        for asset in assets
+    ]
 
     return {
         "asset_count": len(result),

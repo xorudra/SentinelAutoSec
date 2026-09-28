@@ -29,6 +29,7 @@ Core routes:
 - `GET /evidence`
 - `GET /assets`
 - `GET /audit-logs`
+- `GET /dashboard/summary` — one aggregated response for the dashboard poll: `stats` totals (targets, assessments, findings, critical), `targets`, `assessments`, `findings` (newest first, capped by `finding_limit`, default 200; stats always show true totals) and the 10 latest `audit` entries; honors `include_lab`
 - `POST /reports?assessment_id=1&fmt=html`
 - `GET /reports/view?assessment_id=1&fmt=html`
 - `GET /docs`

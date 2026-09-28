@@ -32,20 +32,24 @@ MODULES = [
 ]
 
 
-def _has_finding(db, assessment_id, fingerprint):
-    """Return an existing finding that correlates with the candidate fingerprint."""
+def _existing_fingerprints(db, assessment_id):
+    """Load the assessment's existing finding fingerprints once per batch.
+
+    The previous implementation re-queried every finding for every candidate
+    finding, making an N-finding insert O(N^2) database scans plus O(N^2)
+    correlation calls.
+    """
+    return [
+        row[0]
+        for row in db.query(Finding.fingerprint).filter_by(assessment_id=assessment_id).all()
+    ]
+
+
+def _correlates_with_existing(existing, fingerprint):
+    """Return True when any known fingerprint correlates with the candidate."""
     candidate = {"fingerprint": fingerprint}
 
-    findings = db.query(Finding).filter_by(assessment_id=assessment_id).all()
-
-    for existing in findings:
-        if correlate(
-            {"fingerprint": existing.fingerprint},
-            candidate,
-        ):
-            return existing
-
-    return None
+    return any(correlate({"fingerprint": known}, candidate) for known in existing)
 
 
 def _get_asset(db, assessment_id, host, kind):
@@ -72,8 +76,12 @@ def _add_findings(
 ):
     added = 0
 
+    # One fingerprint query per batch; rows added below are appended so
+    # duplicates inside the same batch are still detected.
+    existing = _existing_fingerprints(db, assessment_id)
+
     for f in findings:
-        if _has_finding(db, assessment_id, f.fingerprint):
+        if _correlates_with_existing(existing, f.fingerprint):
             continue
 
         row = Finding(
@@ -95,6 +103,7 @@ def _add_findings(
         db.add(row)
         db.flush()
         added += 1
+        existing.append(f.fingerprint)
 
         db.add(
             Evidence(
